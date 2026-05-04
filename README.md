@@ -87,8 +87,8 @@ B     C     0.88
 ## License
 
 SPINNER is free for non-commercial research, education, evaluation, and
-academic use. Commercial use requires a separate written license from Jake Y.
-Chen, AIMed Lab, UAB, or another authorized copyright holder. See
+academic use. Commercial use requires a separate written license from Dr. Jake
+Chen or another authorized copyright holder. See
 [`LICENSE`](LICENSE). SPINNER imports the WINNER Python package and the WIPER
 package; the WINNER Python port and WIPER2 path-aware edge-ranking variant use
 matching non-commercial terms.
