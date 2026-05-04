@@ -24,6 +24,7 @@ classifiers = [
 ]
 dependencies = [
     "wiper-net @ git+https://github.com/aimed-lab/WIPER.git#subdirectory=python",
+    "winner-net @ git+https://github.com/aimed-lab/WINNER.git#subdirectory=python",
 ]
 
 [project.optional-dependencies]

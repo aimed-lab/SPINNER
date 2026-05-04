@@ -15,7 +15,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from wiper.io import build_adjacency, normalize_interactions
+from winner.core import initial_score_from_adj
+from winner.io import build_adjacency as build_winner_adjacency
+from winner.pipeline import run_winner
+from wiper.io import build_adjacency as build_wiper_adjacency, normalize_interactions
 from wiper.pathflow import path_usage_matrix
 from wiper.pipeline import WiperResult, run_wiper1, run_wiper2
 from wiper.stats import competition_rank_desc
@@ -98,7 +101,7 @@ def _result_map(result: WiperResult) -> dict[str, dict[str, Any]]:
 
 
 def _pathflow_debug(edge_df: pd.DataFrame) -> dict[str, dict[str, Any]]:
-    nodes, adj = build_adjacency(edge_df)
+    nodes, adj = build_wiper_adjacency(edge_df)
     matrices = path_usage_matrix(adj, nodes=nodes)
     out: dict[str, dict[str, Any]] = {}
     degree = np.asarray(matrices.edge_graph.getnnz(axis=1), dtype=np.int64)
@@ -117,20 +120,17 @@ def _winner_node_scores(
     iterations: int,
     sigma: float = 0.85,
 ) -> list[dict[str, Any]]:
-    nodes, adj = build_adjacency(edge_df)
+    nodes = sorted(set(edge_df["node_a"]).union(edge_df["node_b"]))
+    genes = pd.DataFrame({"gene": nodes, "seed_or_expand": ["S"] * len(nodes)})
+    interactions = edge_df.rename(
+        columns={"node_a": "gene1", "node_b": "gene2", "weight": "weight"}
+    )
+    adj = build_winner_adjacency(nodes, interactions)
     degree = np.count_nonzero(adj > 0, axis=1).astype(np.int64)
     weighted_degree = adj.sum(axis=1).astype(np.float64)
-    score0 = np.zeros(len(nodes), dtype=np.float64)
-    valid = degree > 0
-    score0[valid] = (weighted_degree[valid] ** 2) / degree[valid]
-    row_sum = adj.sum(axis=1).astype(np.float64)
-    transition = np.zeros_like(adj)
-    nonzero = row_sum > 0
-    transition[nonzero] = adj[nonzero] / row_sum[nonzero, None]
-    score = score0.copy()
-    restart = (1.0 - sigma) * score0
-    for _ in range(iterations):
-        score = restart + sigma * (transition.T @ score)
+    score0 = initial_score_from_adj(adj)
+    winner_result = run_winner(genes, interactions, max_iter=iterations, sigma=sigma)
+    score = np.asarray(winner_result.winner_score, dtype=np.float64)
     positive = score[score > 0]
     median = float(np.median(positive)) if positive.size else 1.0
     positive0 = score0[score0 > 0]
