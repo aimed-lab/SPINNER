@@ -14,13 +14,14 @@ authors = [
 maintainers = [
     {name = "Jake Y. Chen", email = "jakechen@uab.edu"},
 ]
-license = {text = "MIT"}
+license = {text = "Non-commercial research and education use; commercial use requires a separate written license"}
 keywords = ["network biology", "protein interactions", "SPINNER", "WIPER", "bioinformatics"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: Other/Proprietary License",
 ]
 dependencies = [
     "wiper-net @ git+https://github.com/aimed-lab/WIPER.git#subdirectory=python",
