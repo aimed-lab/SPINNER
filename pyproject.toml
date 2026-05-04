@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spinner-net"
+version = "0.1.0"
+description = "network SPINNER: Seeded Protein Interaction Network Neighborhood Expansion and Ranking"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    {name = "Jake Y. Chen", email = "jakechen@uab.edu"},
+]
+maintainers = [
+    {name = "Jake Y. Chen", email = "jakechen@uab.edu"},
+]
+license = {text = "MIT"}
+keywords = ["network biology", "protein interactions", "SPINNER", "WIPER", "bioinformatics"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "wiper-net @ git+https://github.com/aimed-lab/WIPER.git#subdirectory=python",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+spinner = "spinner.webapp:main"
+spinner-web = "spinner.webapp:main"
+
+[project.urls]
+"WIPER algorithm" = "https://github.com/aimed-lab/WIPER"
+"Source" = "https://github.com/aimed-lab/SPINNER"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+spinner = ["py.typed", "web/*"]
