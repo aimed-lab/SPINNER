@@ -428,8 +428,8 @@ select {
 
 .settingsPopover {
   position: absolute;
-  top: 52px;
-  right: 12px;
+  top: 62px;
+  right: 18px;
   z-index: 10;
   width: min(760px, calc(100% - 24px));
   max-height: min(520px, calc(100% - 70px));
@@ -526,6 +526,186 @@ select {
   overflow: hidden;
 }
 
+.mapSearchBox,
+.mapActionStack,
+.mapZoomStack {
+  position: absolute;
+  z-index: 6;
+}
+
+.mapSearchBox {
+  top: 14px;
+  left: 14px;
+  width: min(360px, calc(100% - 112px));
+  display: grid;
+  gap: 8px;
+}
+
+.mapSearchBox input {
+  height: 42px;
+  border-color: #cbd5e1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+}
+
+.mapSearchResults,
+.mapDetails {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
+  overflow: hidden;
+}
+
+.mapSearchResults {
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+.searchResult {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-bottom: 1px solid #edf2f7;
+  border-radius: 0;
+  padding: 8px 10px;
+  background: transparent;
+  text-align: left;
+}
+
+.searchResult:last-child {
+  border-bottom: 0;
+}
+
+.searchResult:hover,
+.searchResult.active {
+  background: #eaf7f5;
+}
+
+.searchKind {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.searchName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchScore {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mapDetails {
+  max-height: min(390px, calc(100vh - 260px));
+  overflow: auto;
+}
+
+.mapDetails details {
+  border-bottom: 1px solid #edf2f7;
+}
+
+.mapDetails details:last-child {
+  border-bottom: 0;
+}
+
+.mapDetails summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mapDetails summary::-webkit-details-marker {
+  display: none;
+}
+
+.mapDetails summary::after {
+  content: "+";
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.mapDetails details[open] summary::after {
+  content: "−";
+}
+
+.detailGrid {
+  display: grid;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+.detailGrid .detailLine {
+  margin: 0;
+}
+
+.mapActionStack {
+  top: 14px;
+  right: 14px;
+}
+
+.mapZoomStack {
+  right: 14px;
+  bottom: 14px;
+  display: grid;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+}
+
+.mapIconButton {
+  width: 38px;
+  height: 38px;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid #e2e8f0;
+  border-radius: 0;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.96);
+  color: #334155;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.mapActionStack .mapIconButton {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+}
+
+.mapIconButton:last-child {
+  border-bottom: 0;
+}
+
+.mapIconButton:hover {
+  background: #f8fafc;
+}
+
+.mapResetButton {
+  font-size: 11px;
+}
+
 #networkSvg {
   display: block;
   width: 100%;
@@ -560,11 +740,30 @@ select {
 .node {
   stroke: #334155;
   stroke-width: 2;
+  cursor: pointer;
 }
 
 .node.active {
   stroke: var(--amber);
   stroke-width: 3;
+}
+
+.nodePulse {
+  fill: rgba(180, 83, 9, 0.15);
+  stroke: rgba(180, 83, 9, 0.72);
+  stroke-width: 2;
+  pointer-events: none;
+  animation: nodePulse 720ms ease-out forwards;
+}
+
+@keyframes nodePulse {
+  from {
+    opacity: 0.95;
+  }
+
+  to {
+    opacity: 0;
+  }
 }
 
 .nodeLabel {
@@ -594,7 +793,6 @@ select {
 .edgeLegend,
 .sizeLegend {
   position: absolute;
-  top: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 8px;
@@ -607,12 +805,14 @@ select {
 }
 
 .edgeLegend {
-  left: 10px;
+  left: 14px;
+  bottom: 14px;
   width: 164px;
 }
 
 .sizeLegend {
-  right: 10px;
+  left: 14px;
+  bottom: 104px;
   width: 150px;
 }
 
@@ -981,6 +1181,15 @@ select {
 
   .canvasWrap {
     height: 460px;
+  }
+
+  .mapSearchBox {
+    width: calc(100% - 74px);
+  }
+
+  .edgeLegend,
+  .sizeLegend {
+    display: none;
   }
 
   .resultsHeader,

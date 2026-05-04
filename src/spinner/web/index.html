@@ -107,10 +107,6 @@
                 <strong>Network explorer</strong>
                 <span id="viewSummary">Interactive ranked neighborhood</span>
               </div>
-              <div class="compactControls">
-                <button id="zoomResetBtn" type="button" class="iconButton" aria-label="Reset zoom">1:1</button>
-                <button id="networkSettingsBtn" type="button" class="iconButton" aria-label="Network settings">⚙</button>
-              </div>
             </div>
 
             <div class="settingsPopover" id="networkSettingsPanel" hidden>
@@ -119,6 +115,14 @@
                 <button id="networkSettingsCloseBtn" type="button" class="iconButton" aria-label="Close settings">x</button>
               </div>
               <div class="settingsGrid">
+                <div class="filterGroup">
+                  <span>Layout</span>
+                  <div class="segments" id="layoutModeSegments">
+                    <button type="button" data-layout="dema" class="active">DEMA</button>
+                    <button type="button" data-layout="force">Force</button>
+                    <button type="button" data-layout="organic">Organic</button>
+                  </div>
+                </div>
                 <div class="filterGroup">
                   <span>Edge score</span>
                   <div class="segments" id="metricSegments">
@@ -162,8 +166,8 @@
               <div class="filterGroup">
                 <span>Node size</span>
                 <div class="segments mini" id="nodeScaleSegments">
-                  <button type="button" data-scale="normal" class="active">Normal</button>
-                  <button type="button" data-scale="log">Log</button>
+                  <button type="button" data-scale="normal">Normal</button>
+                  <button type="button" data-scale="log" class="active">Log</button>
                 </div>
                 <div class="segments mini" id="nodeSizeModeSegments">
                   <button type="button" data-size-mode="relative" class="active">Relative</button>
@@ -177,6 +181,19 @@
             </div>
 
             <div class="canvasWrap">
+              <div class="mapSearchBox">
+                <input id="explorerSearchInput" type="search" autocomplete="off" placeholder="Search node or edge" aria-label="Search node or edge" />
+                <div id="explorerSearchResults" class="mapSearchResults" hidden></div>
+                <div id="explorerDetails" class="mapDetails" hidden></div>
+              </div>
+              <div class="mapActionStack">
+                <button id="networkSettingsBtn" type="button" class="mapIconButton" aria-label="Network settings">⚙</button>
+              </div>
+              <div class="mapZoomStack" aria-label="Network zoom controls">
+                <button id="zoomInBtn" type="button" class="mapIconButton" aria-label="Zoom in">+</button>
+                <button id="zoomOutBtn" type="button" class="mapIconButton" aria-label="Zoom out">−</button>
+                <button id="zoomResetBtn" type="button" class="mapIconButton mapResetButton" aria-label="Reset zoom">1:1</button>
+              </div>
               <svg id="networkSvg" viewBox="0 0 900 620" role="img" aria-label="SPINNER network"></svg>
               <div id="edgeLegend" class="edgeLegend"></div>
               <div id="sizeLegend" class="sizeLegend"></div>

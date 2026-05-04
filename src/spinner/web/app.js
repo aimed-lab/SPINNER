@@ -21,8 +21,9 @@ const state = {
   metric: "wiper2",
   edgeMeasure: "ufc",
   edgeScale: "normal",
-  nodeScale: "normal",
+  nodeScale: "log",
   nodeSizeMode: "relative",
+  layoutMode: "dema",
   generatorModel: "random",
   resultTab: "edges",
   sidebarCollapsed: false,
@@ -32,6 +33,8 @@ const state = {
   edgeFilter: "all",
   nodeFilter: "all",
   selected: null,
+  selectedKind: "edge",
+  nodePulse: null,
   positions: new Map(),
   layoutSignature: "",
 };
@@ -56,6 +59,9 @@ const els = {
   tooltip: document.getElementById("graphTooltip"),
   sizeLegend: document.getElementById("sizeLegend"),
   edgeLegend: document.getElementById("edgeLegend"),
+  explorerSearch: document.getElementById("explorerSearchInput"),
+  explorerSearchResults: document.getElementById("explorerSearchResults"),
+  explorerDetails: document.getElementById("explorerDetails"),
   edgeTopN: document.getElementById("edgeTopNInput"),
   edgeTopPercent: document.getElementById("edgeTopPercentInput"),
   edgeThreshold: document.getElementById("edgeThresholdInput"),
@@ -65,6 +71,7 @@ const els = {
   nodeMinRadius: document.getElementById("nodeMinRadiusInput"),
   nodeMaxRadius: document.getElementById("nodeMaxRadiusInput"),
   nodeRadiusFold: document.getElementById("nodeRadiusFoldInput"),
+  layoutModeSegments: document.getElementById("layoutModeSegments"),
   generatorNodeCount: document.getElementById("generatorNodeCountInput"),
   generatorEdgeCount: document.getElementById("generatorEdgeCountInput"),
   generatorMinWeight: document.getElementById("generatorMinWeightInput"),
@@ -83,6 +90,8 @@ const els = {
   networkSettingsBtn: document.getElementById("networkSettingsBtn"),
   networkSettingsClose: document.getElementById("networkSettingsCloseBtn"),
   zoomReset: document.getElementById("zoomResetBtn"),
+  zoomIn: document.getElementById("zoomInBtn"),
+  zoomOut: document.getElementById("zoomOutBtn"),
   leftPane: document.getElementById("leftPane"),
   sidebarToggle: document.getElementById("sidebarToggleBtn"),
   leftResize: document.getElementById("leftResizeHandle"),
@@ -149,7 +158,7 @@ function wiperWeightLine(label, scores) {
 
 function edgeTooltip(edge) {
   return `
-    <div class="tipTitle">${escapeHtml(edge.id.replace("\t", "-"))}</div>
+    <div class="tipTitle">${escapeHtml(edgeLabel(edge))}</div>
     <div class="tipGrid">
       <div class="tipLine"><span>Raw weight</span><strong>${fmt(edge.rawWeight)}</strong></div>
       ${wiperWeightLine("WIPER1", edge.wiper1)}
@@ -168,7 +177,7 @@ function nodeTooltip(node) {
   const rows = incident.map((edge) => {
     const w1 = edge.wiper1 ? `${fmt(edge.wiper1.w0)} -> ${fmt(edge.wiper1.weight)}` : "-";
     const w2 = edge.wiper2 ? `${fmt(edge.wiper2.w0)} -> ${fmt(edge.wiper2.weight)}` : "-";
-    return `<tr><td>${escapeHtml(edge.id.replace("\t", "-"))}</td><td>${w1}</td><td>${w2}</td></tr>`;
+    return `<tr><td>${escapeHtml(edgeLabel(edge))}</td><td>${w1}</td><td>${w2}</td></tr>`;
   }).join("");
   return `
     <div class="tipTitle">${escapeHtml(node.id)}</div>
@@ -206,7 +215,8 @@ function nodeValue(node) {
 }
 
 function nodeSizeValue(node) {
-  return node.winner;
+  if (state.nodeScale !== "log") return node.winner;
+  return Math.log2(Math.max(Number(node.winner) || 0, Number.EPSILON));
 }
 
 function scaledEdgeValue(edge) {
@@ -250,6 +260,13 @@ function nodeRadius(node, minScore, maxScore) {
   return minRadius + (maxRadius - minRadius) * t;
 }
 
+function rawNodeRadius(node, nodes) {
+  const [minScore, maxScore] = range(nodes, (item) => item.winner);
+  const [minRadius, maxRadius] = nodeRadiusBounds();
+  const t = normalize(node.winner, minScore, maxScore);
+  return minRadius + (maxRadius - minRadius) * t;
+}
+
 function renderSizeLegend(nodes, minScore, maxScore) {
   if (!els.sizeLegend) return;
   if (!nodes.length) {
@@ -263,6 +280,7 @@ function renderSizeLegend(nodes, minScore, maxScore) {
   const mode = state.nodeSizeMode === "absolute"
     ? `${fmt(minRadius, 0)}-${fmt(maxRadius, 0)} px`
     : `${fmt(maxRadius / Math.max(1, minRadius), 1)}x radius`;
+  const scale = state.nodeScale === "log" ? "log2 scale" : "linear scale";
   els.sizeLegend.innerHTML = `
     <div class="legendTitle">Node size = final WINNER</div>
     <svg viewBox="0 0 180 58" aria-hidden="true">
@@ -273,7 +291,7 @@ function renderSizeLegend(nodes, minScore, maxScore) {
       <span>${fmt(minScore)}</span>
       <span>${fmt(maxScore)}</span>
     </div>
-    <div class="legendMode">${mode}</div>`;
+    <div class="legendMode">${scale}; ${mode}</div>`;
 }
 
 function colorFor(t) {
@@ -368,7 +386,50 @@ function activeEdgeIds(nodeIds = activeNodeIds()) {
 }
 
 function selectedEdge() {
-  return state.data && state.data.edges.find((edge) => edge.id === state.selected);
+  return state.data && state.selectedKind === "edge" && state.data.edges.find((edge) => edge.id === state.selected);
+}
+
+function selectedNode() {
+  return state.data && state.selectedKind === "node" && state.data.nodes.find((node) => node.id === state.selected);
+}
+
+function edgeLabel(edge) {
+  return edge.id.replace("\t", "-");
+}
+
+function selectGraphItem(kind, id, options = {}) {
+  state.selectedKind = kind;
+  state.selected = id;
+  if (els.explorerSearch && options.updateSearch !== false) {
+    els.explorerSearch.value = kind === "edge" ? edgeLabel({ id }) : id;
+    els.explorerSearchResults.hidden = true;
+  }
+  if (options.center) centerSelection();
+  render();
+}
+
+function centerSelection() {
+  if (!state.data || !state.selected) return;
+  let x = null;
+  let y = null;
+  if (state.selectedKind === "node") {
+    const p = state.positions.get(state.selected);
+    if (p) {
+      x = p.x;
+      y = p.y;
+    }
+  } else {
+    const edge = state.data.edges.find((item) => item.id === state.selected);
+    const a = edge && state.positions.get(edge.source);
+    const b = edge && state.positions.get(edge.target);
+    if (a && b) {
+      x = (a.x + b.x) / 2;
+      y = (a.y + b.y) / 2;
+    }
+  }
+  if (x === null || y === null) return;
+  state.panX = 450 - x * state.zoom;
+  state.panY = 310 - y * state.zoom;
 }
 
 function connectedComponents(nodes, edges) {
@@ -411,17 +472,12 @@ function seededJitter(seed) {
   return ((hash >>> 0) / 4294967295) - 0.5;
 }
 
-function ensureLayout(nodeIds, edgeIds) {
-  if (!state.data) return;
-  const width = 900;
-  const height = 620;
-  const nodes = state.data.nodes.filter((node) => nodeIds.has(node.id));
-  const edges = state.data.edges.filter((edge) => edgeIds.has(edge.id));
-  const signature = `${nodes.map((n) => n.id).join(",")}|${edges.map((e) => e.id).join(",")}`;
-  if (signature === state.layoutSignature) return;
-  state.layoutSignature = signature;
-  state.positions = new Map();
+function layoutNodeRadii(nodes) {
+  const [nodeSizeMin, nodeSizeMax] = range(nodes, nodeSizeValue);
+  return new Map(nodes.map((node) => [node.id, nodeRadius(node, nodeSizeMin, nodeSizeMax)]));
+}
 
+function initializeComponentRings(nodes, edges, width, height) {
   const components = connectedComponents(nodes, edges);
   const componentCenters = new Map();
   const componentRing = Math.min(width, height) * 0.23;
@@ -441,12 +497,17 @@ function ensureLayout(nodeIds, edgeIds) {
       });
     });
   });
+  return componentCenters;
+}
 
-  const area = width * height;
+function relaxLayout(nodes, edges, componentCenters, radii, options) {
+  const width = 900;
+  const height = 620;
   const visibleNodeIds = nodes.map((node) => node.id);
-  const ideal = Math.sqrt(area / Math.max(1, visibleNodeIds.length));
-  let temperature = Math.min(width, height) * 0.24;
-  for (let tick = 0; tick < 640; tick += 1) {
+  const area = width * height;
+  const ideal = Math.sqrt(area / Math.max(1, visibleNodeIds.length)) * options.idealScale;
+  let temperature = Math.min(width, height) * options.temperature;
+  for (let tick = 0; tick < options.ticks; tick += 1) {
     visibleNodeIds.forEach((id) => {
       const p = state.positions.get(id);
       p.dx = 0;
@@ -460,11 +521,13 @@ function ensureLayout(nodeIds, edgeIds) {
         let dy = a.y - b.y;
         let dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < 0.01) {
-          dx = seededJitter(`${visibleNodeIds[i]}:${visibleNodeIds[j]}:x`);
-          dy = seededJitter(`${visibleNodeIds[i]}:${visibleNodeIds[j]}:y`);
+          dx = seededJitter(`${visibleNodeIds[i]}:${visibleNodeIds[j]}:x`) || 0.01;
+          dy = seededJitter(`${visibleNodeIds[i]}:${visibleNodeIds[j]}:y`) || 0.01;
           dist = Math.sqrt(dx * dx + dy * dy) || 1;
         }
-        const force = (ideal * ideal) / dist;
+        const clearance = (radii.get(visibleNodeIds[i]) || 8) + (radii.get(visibleNodeIds[j]) || 8) + options.gap;
+        const overlapBoost = dist < clearance ? (clearance - dist) * options.collisionRepel : 0;
+        const force = ((ideal * ideal) / dist) * options.repel + overlapBoost;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
         a.dx += fx;
@@ -480,8 +543,9 @@ function ensureLayout(nodeIds, edgeIds) {
       const dx = b.x - a.x;
       const dy = b.y - a.y;
       const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
-      const strength = 0.65 + 1.35 * Math.max(0.05, edge.rawWeight || 0.3);
-      const force = ((dist * dist) / ideal) * strength;
+      const raw = Math.max(0.05, edge.rawWeight || 0.3);
+      const desired = ideal * (options.inverseWeights ? 1.45 - raw * 0.7 : 0.75 + raw * 0.45);
+      const force = (dist - desired) * options.attract;
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
       a.dx += fx;
@@ -492,31 +556,99 @@ function ensureLayout(nodeIds, edgeIds) {
     visibleNodeIds.forEach((id) => {
       const p = state.positions.get(id);
       const center = componentCenters.get(id) || { x: width / 2, y: height / 2 };
-      p.dx += (center.x - p.x) * 0.045;
-      p.dy += (center.y - p.y) * 0.045;
+      p.dx += (center.x - p.x) * options.gravity;
+      p.dy += (center.y - p.y) * options.gravity;
       const disp = Math.max(0.01, Math.sqrt(p.dx * p.dx + p.dy * p.dy));
       p.x += (p.dx / disp) * Math.min(disp, temperature);
       p.y += (p.dy / disp) * Math.min(disp, temperature);
     });
-    temperature *= 0.985;
+    temperature *= options.cooling;
   }
+}
 
-  const positions = visibleNodeIds.map((id) => state.positions.get(id));
-  const minX = Math.min(...positions.map((p) => p.x));
-  const maxX = Math.max(...positions.map((p) => p.x));
-  const minY = Math.min(...positions.map((p) => p.y));
-  const maxY = Math.max(...positions.map((p) => p.y));
-  const padding = 58;
+function resolveNodeCollisions(nodes, radii, width, height) {
+  const ids = nodes.map((node) => node.id);
+  const gap = 5;
+  for (let tick = 0; tick < 180; tick += 1) {
+    let moved = false;
+    for (let i = 0; i < ids.length; i += 1) {
+      const a = state.positions.get(ids[i]);
+      for (let j = i + 1; j < ids.length; j += 1) {
+        const b = state.positions.get(ids[j]);
+        let dx = b.x - a.x;
+        let dy = b.y - a.y;
+        let dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 0.01) {
+          dx = seededJitter(`${ids[i]}:${ids[j]}:collision:x`) || 0.01;
+          dy = seededJitter(`${ids[i]}:${ids[j]}:collision:y`) || 0.01;
+          dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        }
+        const minDist = (radii.get(ids[i]) || 8) + (radii.get(ids[j]) || 8) + gap;
+        if (dist >= minDist) continue;
+        const shift = (minDist - dist) / 2;
+        const ux = dx / dist;
+        const uy = dy / dist;
+        a.x -= ux * shift;
+        a.y -= uy * shift;
+        b.x += ux * shift;
+        b.y += uy * shift;
+        moved = true;
+      }
+    }
+    ids.forEach((id) => {
+      const p = state.positions.get(id);
+      const radius = radii.get(id) || 8;
+      p.x = clamp(p.x, radius + gap, width - radius - gap);
+      p.y = clamp(p.y, radius + gap, height - radius - gap);
+    });
+    if (!moved) break;
+  }
+}
+
+function fitLayoutToView(nodes, radii, width, height) {
+  const positions = nodes.map((node) => state.positions.get(node.id)).filter(Boolean);
+  if (!positions.length) return;
+  const pad = 62;
+  const minX = Math.min(...nodes.map((node) => state.positions.get(node.id).x - (radii.get(node.id) || 8)));
+  const maxX = Math.max(...nodes.map((node) => state.positions.get(node.id).x + (radii.get(node.id) || 8)));
+  const minY = Math.min(...nodes.map((node) => state.positions.get(node.id).y - (radii.get(node.id) || 8)));
+  const maxY = Math.max(...nodes.map((node) => state.positions.get(node.id).y + (radii.get(node.id) || 8)));
   const spanX = Math.max(1, maxX - minX);
   const spanY = Math.max(1, maxY - minY);
-  const scale = Math.min((width - padding * 2) / spanX, (height - padding * 2) / spanY, 1.35);
+  const scale = Math.min((width - pad * 2) / spanX, (height - pad * 2) / spanY, 1.25);
   const offsetX = (width - spanX * scale) / 2 - minX * scale;
   const offsetY = (height - spanY * scale) / 2 - minY * scale;
-  visibleNodeIds.forEach((id) => {
-    const p = state.positions.get(id);
+  nodes.forEach((node) => {
+    const p = state.positions.get(node.id);
     p.x = p.x * scale + offsetX;
     p.y = p.y * scale + offsetY;
   });
+}
+
+function ensureLayout(nodeIds, edgeIds) {
+  if (!state.data) return;
+  const width = 900;
+  const height = 620;
+  const nodes = state.data.nodes.filter((node) => nodeIds.has(node.id));
+  const edges = state.data.edges.filter((edge) => edgeIds.has(edge.id));
+  const radiusSignature = `${state.nodeScale}:${state.nodeSizeMode}:${els.nodeMinRadius.value}:${els.nodeMaxRadius.value}:${els.nodeRadiusFold.value}`;
+  const signature = `${state.layoutMode}|${radiusSignature}|${nodes.map((n) => n.id).join(",")}|${edges.map((e) => e.id).join(",")}`;
+  if (signature === state.layoutSignature) return;
+  state.layoutSignature = signature;
+  state.positions = new Map();
+
+  if (!nodes.length) return;
+  const radii = layoutNodeRadii(nodes);
+  const componentCenters = initializeComponentRings(nodes, edges, width, height);
+  const modes = {
+    force: { ticks: 620, idealScale: 1.0, temperature: 0.24, cooling: 0.985, repel: 1.0, attract: 0.19, gravity: 0.045, gap: 7, collisionRepel: 1.35, inverseWeights: false },
+    organic: { ticks: 760, idealScale: 1.18, temperature: 0.28, cooling: 0.982, repel: 1.25, attract: 0.12, gravity: 0.025, gap: 10, collisionRepel: 1.7, inverseWeights: false },
+    dema: { ticks: 820, idealScale: 1.08, temperature: 0.20, cooling: 0.986, repel: 1.45, attract: 0.16, gravity: 0.035, gap: 9, collisionRepel: 2.1, inverseWeights: true },
+  };
+  relaxLayout(nodes, edges, componentCenters, radii, modes[state.layoutMode] || modes.dema);
+  resolveNodeCollisions(nodes, radii, width, height);
+  fitLayoutToView(nodes, radii, width, height);
+  resolveNodeCollisions(nodes, radii, width, height);
 }
 
 function edgeReason(edge) {
@@ -547,9 +679,10 @@ function drawNetwork() {
 
   const edgeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  const pulseLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const viewport = document.createElementNS("http://www.w3.org/2000/svg", "g");
   viewport.setAttribute("transform", `translate(${state.panX} ${state.panY}) scale(${state.zoom})`);
-  viewport.append(edgeLayer, nodeLayer);
+  viewport.append(edgeLayer, pulseLayer, nodeLayer);
   els.svg.append(viewport);
 
   edges.forEach((edge) => {
@@ -564,24 +697,35 @@ function drawNetwork() {
     line.setAttribute("y2", b.y);
     line.setAttribute("stroke", colorFor(t));
     line.setAttribute("stroke-width", String(edgeStrokeWidth(t)));
-    line.setAttribute("class", `edge ${edge.id === state.selected ? "selected" : ""}`);
+    line.setAttribute("class", `edge ${state.selectedKind === "edge" && edge.id === state.selected ? "selected" : ""}`);
     line.addEventListener("mouseenter", (event) => showTooltip(event, edgeTooltip(edge)));
     line.addEventListener("mousemove", tooltipMove);
     line.addEventListener("mouseleave", hideTooltip);
     line.addEventListener("click", () => {
-      state.selected = edge.id;
-      render();
+      selectGraphItem("edge", edge.id, { updateSearch: true });
     });
     edgeLayer.appendChild(line);
   });
 
   const selected = selectedEdge();
+  const selectedNodeItem = selectedNode();
   nodes.forEach((node) => {
     const p = state.positions.get(node.id);
+    if (!p) return;
     const t = normalize(nodeValue(node), nodeMin, nodeMax);
     const radius = nodeRadius(node, nodeSizeMin, nodeSizeMax);
-    const activeNode = selected && (selected.source === node.id || selected.target === node.id);
+    const originalRadius = rawNodeRadius(node, nodes);
+    const activeNode = (selected && (selected.source === node.id || selected.target === node.id))
+      || (selectedNodeItem && selectedNodeItem.id === node.id);
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
+    if (state.nodePulse && state.nodePulse.id === node.id) {
+      const pulse = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      pulse.setAttribute("cx", p.x);
+      pulse.setAttribute("cy", p.y);
+      pulse.setAttribute("r", Math.max(radius + 1, originalRadius));
+      pulse.setAttribute("class", "nodePulse");
+      pulseLayer.appendChild(pulse);
+    }
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("cx", p.x);
     circle.setAttribute("cy", p.y);
@@ -591,6 +735,17 @@ function drawNetwork() {
     circle.addEventListener("mouseenter", (event) => showTooltip(event, nodeTooltip(node)));
     circle.addEventListener("mousemove", tooltipMove);
     circle.addEventListener("mouseleave", hideTooltip);
+    circle.addEventListener("click", () => {
+      selectGraphItem("node", node.id, { updateSearch: true });
+      state.nodePulse = { id: node.id };
+      drawNetwork();
+      window.setTimeout(() => {
+        if (state.nodePulse && state.nodePulse.id === node.id) {
+          state.nodePulse = null;
+          drawNetwork();
+        }
+      }, 720);
+    });
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("x", p.x + radius + 5);
     label.setAttribute("y", p.y + 4);
@@ -616,6 +771,18 @@ function resetZoom() {
   state.zoom = 1;
   state.panX = 0;
   state.panY = 0;
+  drawNetwork();
+}
+
+function zoomBy(factor) {
+  const previous = state.zoom;
+  const next = clamp(previous * factor, 0.35, 5);
+  const point = { x: 450, y: 310 };
+  const worldX = (point.x - state.panX) / previous;
+  const worldY = (point.y - state.panY) / previous;
+  state.zoom = next;
+  state.panX = point.x - worldX * next;
+  state.panY = point.y - worldY * next;
   drawNetwork();
 }
 
@@ -673,12 +840,11 @@ function renderTable() {
   els.rows.replaceChildren();
   edges.forEach((edge) => {
     const row = document.createElement("tr");
-    row.className = edge.id === state.selected ? "selected" : "";
+    row.className = state.selectedKind === "edge" && edge.id === state.selected ? "selected" : "";
     row.addEventListener("click", () => {
-      state.selected = edge.id;
-      render();
+      selectGraphItem("edge", edge.id, { updateSearch: true });
     });
-    const edgeName = edge.id.replace("\t", "-");
+    const edgeName = edgeLabel(edge);
     row.innerHTML = `
       <td><strong>${edgeName}</strong><br>${edgeIds.has(edge.id) ? '<span class="badge">shown</span>' : '<span class="rank">hidden</span>'}</td>
       <td>${fmt(edge.rawWeight)}<br><span class="rank">#${edge.rawRank || "-"}</span></td>
@@ -700,7 +866,10 @@ function renderNodesTable() {
   els.nodeRows.replaceChildren();
   nodes.forEach((node) => {
     const row = document.createElement("tr");
-    row.className = nodeIds.has(node.id) ? "" : "mutedRow";
+    row.className = `${nodeIds.has(node.id) ? "" : "mutedRow"} ${state.selectedKind === "node" && state.selected === node.id ? "selected" : ""}`;
+    row.addEventListener("click", () => {
+      selectGraphItem("node", node.id, { updateSearch: true });
+    });
     row.innerHTML = `
       <td><strong>${escapeHtml(node.id)}</strong><br>${nodeIds.has(node.id) ? '<span class="badge">shown</span>' : '<span class="rank">hidden</span>'}</td>
       <td>${fmt(node.winner0)} -> ${fmt(node.winner)}</td>
@@ -713,8 +882,28 @@ function renderNodesTable() {
 
 function renderSelected() {
   const edge = selectedEdge();
-  if (!edge) {
+  const node = selectedNode();
+  if (!edge && !node) {
     els.selected.textContent = "None";
+    return;
+  }
+  if (node) {
+    const incident = state.data.edges.filter((item) => item.source === node.id || item.target === node.id);
+    const lines = [
+      ["Node", node.id],
+      ["WINNER UFC", `${fmt(node.winner0)} -> ${fmt(node.winner)}`],
+      ["WINNER W", `${fmt(node.winnerInitialWeight)} -> ${fmt(node.winnerWeight)}`],
+      ["Degree", node.degree],
+      ["Rank", `#${node.rank}`],
+      ["Incident edges", incident.length],
+    ];
+    els.selected.replaceChildren();
+    lines.forEach(([label, value]) => {
+      const div = document.createElement("div");
+      div.className = "detailLine";
+      div.innerHTML = `<span>${label}</span><strong>${value}</strong>`;
+      els.selected.appendChild(div);
+    });
     return;
   }
   const nodeMap = new Map(state.data.nodes.map((node) => [node.id, node]));
@@ -723,7 +912,7 @@ function renderSelected() {
   const source = nodeMap.get(edge.source);
   const target = nodeMap.get(edge.target);
   const lines = [
-    ["Edge", edge.id.replace("\t", "-")],
+    ["Edge", edgeLabel(edge)],
     ["Raw weight", fmt(edge.rawWeight)],
     ["WIPER1 UFC", fmt(edge.wiper1 && edge.wiper1.score)],
     ["WIPER1 W", fmt(edge.wiper1 && edge.wiper1.weight)],
@@ -743,6 +932,126 @@ function renderSelected() {
   });
 }
 
+function detailLinesHtml(lines) {
+  return `<div class="detailGrid">${lines.map(([label, value]) => `
+    <div class="detailLine"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>
+  `).join("")}</div>`;
+}
+
+function renderExplorerDetails() {
+  if (!els.explorerDetails) return;
+  const edge = selectedEdge();
+  const node = selectedNode();
+  if (!edge && !node) {
+    els.explorerDetails.hidden = true;
+    els.explorerDetails.textContent = "";
+    return;
+  }
+  els.explorerDetails.hidden = false;
+  if (edge) {
+    const nodeMap = new Map(state.data.nodes.map((item) => [item.id, item]));
+    const source = nodeMap.get(edge.source);
+    const target = nodeMap.get(edge.target);
+    els.explorerDetails.innerHTML = `
+      <details open>
+        <summary>${escapeHtml(edgeLabel(edge))}<span class="searchScore">edge</span></summary>
+        ${detailLinesHtml([
+          ["Raw weight", fmt(edge.rawWeight)],
+          ["Raw rank", `#${edge.rawRank || "-"}`],
+          ["Reason", edgeReason(edge)],
+        ])}
+      </details>
+      <details open>
+        <summary>WIPER scores<span class="searchScore">${metricLabel()}</span></summary>
+        ${detailLinesHtml([
+          ["WIPER1 UFC", `${fmt(edge.wiper1 && edge.wiper1.ufc0)} -> ${fmt(edge.wiper1 && edge.wiper1.score)}`],
+          ["WIPER1 W", `${fmt(edge.wiper1 && edge.wiper1.w0)} -> ${fmt(edge.wiper1 && edge.wiper1.weight)}`],
+          ["WIPER2 UFC", `${fmt(edge.wiper2 && edge.wiper2.ufc0)} -> ${fmt(edge.wiper2 && edge.wiper2.score)}`],
+          ["WIPER2 W", `${fmt(edge.wiper2 && edge.wiper2.w0)} -> ${fmt(edge.wiper2 && edge.wiper2.weight)}`],
+          ["Path load", fmt(edge.wiper2 && edge.wiper2.pathLoad)],
+        ])}
+      </details>
+      <details>
+        <summary>Endpoint WINNER scores<span class="searchScore">nodes</span></summary>
+        ${detailLinesHtml([
+          [edge.source, source ? `${fmt(source.winner0)} -> ${fmt(source.winner)} (#${source.rank})` : "-"],
+          [edge.target, target ? `${fmt(target.winner0)} -> ${fmt(target.winner)} (#${target.rank})` : "-"],
+        ])}
+      </details>`;
+    return;
+  }
+  const incident = state.data.edges
+    .filter((item) => item.source === node.id || item.target === node.id)
+    .sort((a, b) => Number(edgeValue(b) || 0) - Number(edgeValue(a) || 0))
+    .slice(0, 8);
+  els.explorerDetails.innerHTML = `
+    <details open>
+      <summary>${escapeHtml(node.id)}<span class="searchScore">node</span></summary>
+      ${detailLinesHtml([
+        ["WINNER UFC", `${fmt(node.winner0)} -> ${fmt(node.winner)}`],
+        ["WINNER W", `${fmt(node.winnerInitialWeight)} -> ${fmt(node.winnerWeight)}`],
+        ["Degree", String(node.degree)],
+        ["Rank", `#${node.rank}`],
+      ])}
+    </details>
+    <details open>
+      <summary>Incident edge scores<span class="searchScore">${incident.length}</span></summary>
+      ${detailLinesHtml(incident.map((item) => [
+        edgeLabel(item),
+        `${metricLabel()} ${fmt(edgeValue(item))}; raw ${fmt(item.rawWeight)}`,
+      ]))}
+    </details>`;
+}
+
+function searchItems(query) {
+  if (!state.data) return [];
+  const needle = query.trim().toLowerCase();
+  if (!needle) return [];
+  const nodes = state.data.nodes
+    .filter((node) => node.id.toLowerCase().includes(needle))
+    .map((node) => ({
+      kind: "node",
+      id: node.id,
+      name: node.id,
+      score: `WINNER ${fmt(node.winner)}`,
+      rank: node.rank || 999999,
+    }));
+  const edges = state.data.edges
+    .filter((edge) => edgeLabel(edge).toLowerCase().includes(needle))
+    .map((edge) => ({
+      kind: "edge",
+      id: edge.id,
+      name: edgeLabel(edge),
+      score: `${metricLabel()} ${fmt(edgeValue(edge))}`,
+      rank: edgeRank(edge, state.metric) || 999999,
+    }));
+  return [...nodes, ...edges].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name)).slice(0, 8);
+}
+
+function renderSearchResults() {
+  if (!els.explorerSearchResults || !els.explorerSearch) return;
+  const results = searchItems(els.explorerSearch.value);
+  els.explorerSearchResults.replaceChildren();
+  if (!results.length) {
+    els.explorerSearchResults.hidden = true;
+    return;
+  }
+  els.explorerSearchResults.hidden = false;
+  results.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `searchResult ${state.selectedKind === item.kind && state.selected === item.id ? "active" : ""}`;
+    button.innerHTML = `
+      <span class="searchKind">${item.kind}</span>
+      <span class="searchName">${escapeHtml(item.name)}</span>
+      <span class="searchScore">${escapeHtml(item.score)}</span>`;
+    button.addEventListener("click", () => {
+      selectGraphItem(item.kind, item.id, { updateSearch: true, center: true });
+    });
+    els.explorerSearchResults.appendChild(button);
+  });
+}
+
 function render() {
   if (!state.data) return;
   const s = state.data.summary;
@@ -750,12 +1059,14 @@ function render() {
   const edgeIds = activeEdgeIds(nodeIds);
   els.summary.textContent = `${nodeIds.size}/${s.nodeCount} nodes, ${edgeIds.size}/${s.inputEdgeCount} edges shown, ${s.iterations} iterations`;
   if (els.viewSummary) {
-    els.viewSummary.textContent = `${metricLabel()} ${state.metric === "raw" ? "raw" : state.edgeMeasure.toUpperCase()} view, ${state.edgeScale} edge scale`;
+    els.viewSummary.textContent = `${state.layoutMode.toUpperCase()} layout, ${metricLabel()} ${state.metric === "raw" ? "raw" : state.edgeMeasure.toUpperCase()} view, ${state.edgeScale} edge scale`;
   }
   drawNetwork();
   renderTable();
   renderNodesTable();
   renderSelected();
+  renderExplorerDetails();
+  renderSearchResults();
 }
 
 async function analyze() {
@@ -782,6 +1093,7 @@ async function analyze() {
   state.positions = new Map();
   state.layoutSignature = "";
   state.selected = result.edges[0] && result.edges[0].id;
+  state.selectedKind = "edge";
   render();
 }
 
@@ -1155,6 +1467,16 @@ function applyChatInstruction() {
     setSegment("edgeMeasureSegments", "edgeMeasure", "weight", "data-measure");
     notes.push("edge measure set to W");
   }
+  if (lower.includes("dema")) {
+    setSegment("layoutModeSegments", "layoutMode", "dema", "data-layout");
+    notes.push("layout set to DEMA");
+  } else if (lower.includes("force")) {
+    setSegment("layoutModeSegments", "layoutMode", "force", "data-layout");
+    notes.push("layout set to force-directed");
+  } else if (lower.includes("organic")) {
+    setSegment("layoutModeSegments", "layoutMode", "organic", "data-layout");
+    notes.push("layout set to organic");
+  }
   if (topMatch) {
     setSegment("edgeFilterSegments", "edgeFilter", "topn", "data-mode");
     els.edgeTopN.value = topMatch[1];
@@ -1223,6 +1545,7 @@ bindSegments("edgeMeasureSegments", "edgeMeasure", "data-measure");
 bindSegments("edgeScaleSegments", "edgeScale", "data-scale");
 bindSegments("nodeScaleSegments", "nodeScale", "data-scale");
 bindSegments("nodeSizeModeSegments", "nodeSizeMode", "data-size-mode");
+bindSegments("layoutModeSegments", "layoutMode", "data-layout");
 bindSegments("generatorModelSegments", "generatorModel", "data-generator");
 bindSegments("edgeFilterSegments", "edgeFilter", "data-mode");
 bindSegments("nodeFilterSegments", "nodeFilter", "data-mode");
@@ -1245,6 +1568,8 @@ els.sample.addEventListener("click", () => {
 els.random.addEventListener("click", makeRandom);
 els.geneterrain.addEventListener("click", makeGeneterrain);
 els.zoomReset.addEventListener("click", resetZoom);
+els.zoomIn.addEventListener("click", () => zoomBy(1.22));
+els.zoomOut.addEventListener("click", () => zoomBy(0.82));
 els.networkSettingsBtn.addEventListener("click", () => {
   els.networkSettings.hidden = !els.networkSettings.hidden;
 });
@@ -1254,6 +1579,14 @@ els.networkSettingsClose.addEventListener("click", () => {
 els.filter.addEventListener("input", () => {
   renderTable();
   renderNodesTable();
+});
+els.explorerSearch.addEventListener("input", renderSearchResults);
+els.explorerSearch.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  const first = searchItems(els.explorerSearch.value)[0];
+  if (first) {
+    selectGraphItem(first.kind, first.id, { updateSearch: true, center: true });
+  }
 });
 els.chatApply.addEventListener("click", applyChatInstruction);
 els.chatInput.addEventListener("keydown", (event) => {
