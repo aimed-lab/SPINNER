@@ -37,6 +37,7 @@ spinner-web = "spinner.webapp:main"
 
 [project.urls]
 "WIPER algorithm" = "https://github.com/aimed-lab/WIPER"
+"DEMA layout algorithm" = "https://github.com/aimed-lab/DEMA"
 "Source" = "https://github.com/aimed-lab/SPINNER"
 
 [tool.setuptools.packages.find]

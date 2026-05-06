@@ -6,13 +6,17 @@ SPINNER is an interactive local web application for constructing, refining, rank
 
 The algorithm implementation lives in [`aimed-lab/WIPER`](https://github.com/aimed-lab/WIPER). This repository is the separate application layer.
 Node scoring is provided by [`aimed-lab/WINNER`](https://github.com/aimed-lab/WINNER).
+The default network layout follows the DEMA distance-bounded energy-field
+style from [`aimed-lab/DEMA`](https://github.com/aimed-lab/DEMA), with local
+force-directed and organic alternatives in the browser.
 
 ## Features
 
 - Paste or upload weighted edge lists.
 - Generate random, scale-free, or Geneterrain-style test networks.
 - Score edges with WIPER1 or WIPER2 and nodes with the real WINNER Python package.
-- Zoom and pan the network explorer.
+- Zoom and pan the network explorer with DEMA, force-directed, or organic layouts.
+- Keep visible node circles separated with log-scaled WINNER node sizing and click-to-preview original-scale node circles.
 - Filter by top N, top percent, or score threshold.
 - Use the agentic chat panel for quick refinements.
 - Export TSV, Excel-readable workbooks, Markdown reports, Word-ready method/results, and SVG figures.
