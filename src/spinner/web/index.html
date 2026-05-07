@@ -13,19 +13,42 @@
         <p>Seeded Protein Interaction Network Neighborhood Expansion and Ranking</p>
         <span id="summary">Ready</span>
       </div>
-      <div class="toolbar">
-        <button id="sampleBtn" type="button">Sample</button>
-        <button id="randomBtn" type="button">Generate</button>
-        <button id="geneterrainBtn" type="button">Geneterrain</button>
-        <button id="analyzeBtn" type="button" class="primary">Analyze</button>
+      <div class="topActions" aria-label="Account and appearance">
+        <button id="themeToggleBtn" type="button" class="topIconButton" aria-label="Switch to dark mode" title="Switch to dark mode">
+          <span aria-hidden="true">☾</span>
+        </button>
+        <button id="accountBtn" type="button" class="accountButton" aria-label="Account settings" title="Account settings">
+          <span aria-hidden="true">JY</span>
+        </button>
       </div>
     </header>
 
     <main class="workspace" id="workspace">
       <aside class="panel controls" id="leftPane">
-        <button id="sidebarToggleBtn" type="button" class="sidebarToggle" aria-label="Collapse input panel">Input</button>
-        <section class="controlBlock railSection">
-          <div class="sectionTitle"><span class="sectionIcon" aria-hidden="true">P</span><span class="blockLabel">Project</span></div>
+        <button id="sidebarToggleBtn" type="button" class="sidebarToggle" aria-label="Collapse navigation panel" aria-expanded="true">
+          <span class="sidebarToggleIcon" aria-hidden="true">‹</span>
+          <span class="sidebarToggleLabel">Collapse</span>
+        </button>
+        <nav class="sideNav" aria-label="SPINNER workflow">
+          <button type="button" class="navItem active" data-nav-panel="input" aria-label="Input panel" title="Input">
+            <span class="navIcon" aria-hidden="true">⌁</span>
+            <span class="navLabel">Input</span>
+          </button>
+          <button type="button" class="navItem" data-nav-panel="generation" aria-label="Generation panel" title="Generation">
+            <span class="navIcon" aria-hidden="true">◎</span>
+            <span class="navLabel">Generation</span>
+          </button>
+          <button type="button" class="navItem" data-nav-panel="results" aria-label="Results panel" title="Results">
+            <span class="navIcon" aria-hidden="true">▤</span>
+            <span class="navLabel">Results</span>
+          </button>
+          <button type="button" class="navItem" data-nav-panel="export" aria-label="Export panel" title="Export">
+            <span class="navIcon" aria-hidden="true">⇥</span>
+            <span class="navLabel">Export</span>
+          </button>
+        </nav>
+        <section class="controlBlock railSection navPanel active" data-nav-panel="input">
+          <div class="sectionTitle"><span class="sectionIcon" aria-hidden="true">⌁</span><span class="blockLabel">Input</span></div>
           <label>
             <span>Name</span>
             <input id="projectNameInput" type="text" value="SPINNER session" />
@@ -38,15 +61,11 @@
             <span>Network file</span>
             <input id="fileInput" type="file" accept=".tsv,.txt,.csv" />
           </label>
-        </section>
 
-        <section class="controlBlock railSection">
           <div class="sectionTitle"><span class="sectionIcon" aria-hidden="true">F</span><span class="blockLabel">File upload</span></div>
           <span class="subLabel">Edge list</span>
           <textarea id="edgeText" spellcheck="false"></textarea>
-        </section>
 
-        <section class="controlBlock railSection">
           <div class="sectionTitle"><span class="sectionIcon" aria-hidden="true">A</span><span class="blockLabel">Parameters</span></div>
           <div class="grid2">
             <label>
@@ -69,8 +88,8 @@
           </label>
         </section>
 
-        <section class="controlBlock railSection">
-          <div class="sectionTitle"><span class="sectionIcon" aria-hidden="true">G</span><span class="blockLabel">Generator</span></div>
+        <section class="controlBlock railSection navPanel" data-nav-panel="generation">
+          <div class="sectionTitle"><span class="sectionIcon" aria-hidden="true">◎</span><span class="blockLabel">Generation</span></div>
           <div class="segments" id="generatorModelSegments">
             <button type="button" data-generator="random" class="active">Random</button>
             <button type="button" data-generator="scale-free">Scale-free</button>
@@ -95,6 +114,72 @@
               <input id="generatorMaxWeightInput" type="number" min="0" max="1" step="0.05" value="0.95" />
             </label>
           </div>
+          <div class="actionList">
+            <button id="generateNetworkBtn" type="button" class="railAction">
+              <span aria-hidden="true">◎</span>
+              <span>Generate network</span>
+            </button>
+            <button id="generateGeneterrainBtn" type="button" class="railAction">
+              <span aria-hidden="true">⌬</span>
+              <span>Generate Geneterrain</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="controlBlock railSection navPanel" data-nav-panel="results">
+          <div class="sectionTitle"><span class="sectionIcon" aria-hidden="true">▤</span><span class="blockLabel">Results</span></div>
+          <div class="actionList">
+            <button id="resultEdgesBtn" type="button" class="railAction">
+              <span aria-hidden="true">E</span>
+              <span>Edge table</span>
+            </button>
+            <button id="resultNodesBtn" type="button" class="railAction">
+              <span aria-hidden="true">N</span>
+              <span>Node table</span>
+            </button>
+          </div>
+          <section class="selectedPanel" id="selectedPanel">
+            <span class="blockLabel">Selected item</span>
+            <div id="selectedDetails">None</div>
+          </section>
+        </section>
+
+        <section class="controlBlock railSection navPanel" data-nav-panel="export">
+          <div class="sectionTitle"><span class="sectionIcon" aria-hidden="true">⇥</span><span class="blockLabel">Export</span></div>
+          <div class="actionList">
+            <button id="outputGeneterrainBtn" type="button" class="railAction">
+              <span aria-hidden="true">⌬</span>
+              <span>Output to Geneterrain</span>
+            </button>
+            <button id="exportFigureBtn" type="button" class="railAction">
+              <span aria-hidden="true">▧</span>
+              <span>Export visualization</span>
+            </button>
+            <button id="exportShownBtn" type="button" class="railAction">
+              <span aria-hidden="true">S</span>
+              <span>Export shown network</span>
+            </button>
+            <button id="exportEdgesBtn" type="button" class="railAction">
+              <span aria-hidden="true">E</span>
+              <span>Export edge table</span>
+            </button>
+            <button id="exportNodesBtn" type="button" class="railAction">
+              <span aria-hidden="true">N</span>
+              <span>Export node table</span>
+            </button>
+            <button id="exportMarkdownBtn" type="button" class="railAction">
+              <span aria-hidden="true">N</span>
+              <span>Export to Notion</span>
+            </button>
+            <button id="exportWordBtn" type="button" class="railAction">
+              <span aria-hidden="true">W</span>
+              <span>Export to Word</span>
+            </button>
+            <button id="exportExcelBtn" type="button" class="railAction">
+              <span aria-hidden="true">X</span>
+              <span>Export to Excel</span>
+            </button>
+          </div>
         </section>
       </aside>
       <div id="leftResizeHandle" class="resizeHandle resizeHandleVertical" role="separator" aria-orientation="vertical" aria-label="Resize input panel"></div>
@@ -106,6 +191,18 @@
               <div>
                 <strong>Network explorer</strong>
                 <span id="viewSummary">Interactive ranked neighborhood</span>
+              </div>
+              <div class="mapSearchBox">
+                <label class="explorerSearchLabel">
+                  <span aria-hidden="true">⌕</span>
+                  <input id="explorerSearchInput" type="search" autocomplete="off" placeholder="Search node or edge" aria-label="Search node or edge" />
+                </label>
+                <div id="explorerSearchResults" class="mapSearchResults" hidden></div>
+                <button id="explorerDetailsShowBtn" type="button" class="mapDetailsShow" hidden>Show details</button>
+                <div id="explorerDetails" class="mapDetails" hidden>
+                  <button id="explorerDetailsCloseBtn" type="button" class="mapDetailsClose" aria-label="Close details">×</button>
+                  <div id="explorerDetailsBody"></div>
+                </div>
               </div>
             </div>
 
@@ -181,17 +278,9 @@
             </div>
 
             <div class="canvasWrap">
-              <div class="mapSearchBox">
-                <input id="explorerSearchInput" type="search" autocomplete="off" placeholder="Search node or edge" aria-label="Search node or edge" />
-                <div id="explorerSearchResults" class="mapSearchResults" hidden></div>
-                <button id="explorerDetailsShowBtn" type="button" class="mapDetailsShow" hidden>Show details</button>
-                <div id="explorerDetails" class="mapDetails" hidden>
-                  <button id="explorerDetailsCloseBtn" type="button" class="mapDetailsClose" aria-label="Close details">×</button>
-                  <div id="explorerDetailsBody"></div>
-                </div>
-              </div>
               <div class="mapActionStack">
                 <button id="networkSettingsBtn" type="button" class="mapIconButton" aria-label="Network settings">⚙</button>
+                <button id="explorerFullscreenBtn" type="button" class="mapIconButton" aria-label="Expand network explorer" title="Expand network explorer">⛶</button>
               </div>
               <div class="mapZoomStack" aria-label="Network zoom controls">
                 <button id="zoomInBtn" type="button" class="mapIconButton" aria-label="Zoom in">+</button>
@@ -212,8 +301,23 @@
               <span>Network construction assistant</span>
             </div>
             <div id="chatLog" class="chatLog"></div>
+            <div class="tripPlanner" aria-label="Node route planner">
+              <div class="sectionTitle"><span class="sectionIcon" aria-hidden="true">↦</span><span class="blockLabel">Route planner</span></div>
+              <div class="tripFields">
+                <label>
+                  <span>From</span>
+                  <input id="routeSourceInput" type="text" list="nodeOptions" autocomplete="off" placeholder="Start node" />
+                </label>
+                <label>
+                  <span>To</span>
+                  <input id="routeTargetInput" type="text" list="nodeOptions" autocomplete="off" placeholder="End node" />
+                </label>
+              </div>
+              <datalist id="nodeOptions"></datalist>
+              <button id="planTripBtn" type="button">Plan trip</button>
+            </div>
             <div class="chatComposer">
-              <textarea id="chatInput" rows="3" spellcheck="false" placeholder="Try: show top 10 WIPER2 edges, use log scale, generate 20 nodes 35 edges, include novel"></textarea>
+              <textarea id="chatInput" rows="3" spellcheck="false" placeholder="Try: plan trip from A to F, show top 10 WIPER2 edges, generate 20 nodes 35 edges"></textarea>
               <button id="chatApplyBtn" type="button">Apply</button>
             </div>
           </aside>
@@ -225,7 +329,6 @@
             <div class="tabs" id="resultTabs">
               <button type="button" data-tab="edges" class="active">Edges</button>
               <button type="button" data-tab="nodes">Nodes</button>
-              <button type="button" data-tab="export">Export</button>
             </div>
             <label class="resultsFilter">
               <span class="resultsFilterIcon" aria-hidden="true">⌕</span>
@@ -272,25 +375,6 @@
                 <tbody id="nodeRows"></tbody>
               </table>
             </div>
-          </div>
-          <div class="tabPanel exportPanel" id="exportTab">
-            <div class="exportGroup">
-              <span class="blockLabel">Tables</span>
-              <button id="exportEdgesBtn" type="button">Export edge scores TSV</button>
-              <button id="exportNodesBtn" type="button">Export node scores TSV</button>
-              <button id="exportShownBtn" type="button">Export shown network TSV</button>
-              <button id="exportExcelBtn" type="button">Export Excel workbook</button>
-            </div>
-            <div class="exportGroup">
-              <span class="blockLabel">Reports</span>
-              <button id="exportMarkdownBtn" type="button">Export Markdown report</button>
-              <button id="exportWordBtn" type="button">Export Word-ready method/results</button>
-              <button id="exportFigureBtn" type="button">Export SVG figure</button>
-            </div>
-            <section class="selectedPanel" id="selectedPanel">
-              <span class="blockLabel">Selected edge</span>
-              <div id="selectedDetails">None</div>
-            </section>
           </div>
         </section>
       </section>
