@@ -26,7 +26,11 @@ const state = {
   layoutMode: "dema",
   generatorModel: "random",
   resultTab: "edges",
+  activeNavPanel: "input",
   sidebarCollapsed: false,
+  theme: "light",
+  explorerFullscreen: false,
+  plannedRoute: null,
   zoom: 1,
   panX: 0,
   panY: 0,
@@ -45,10 +49,8 @@ const els = {
   iterations: document.getElementById("iterationsInput"),
   device: document.getElementById("deviceInput"),
   includeNovel: document.getElementById("includeNovelInput"),
-  analyze: document.getElementById("analyzeBtn"),
-  sample: document.getElementById("sampleBtn"),
-  random: document.getElementById("randomBtn"),
-  geneterrain: document.getElementById("geneterrainBtn"),
+  themeToggle: document.getElementById("themeToggleBtn"),
+  account: document.getElementById("accountBtn"),
   summary: document.getElementById("summary"),
   viewSummary: document.getElementById("viewSummary"),
   svg: document.getElementById("networkSvg"),
@@ -79,9 +81,20 @@ const els = {
   generatorEdgeCount: document.getElementById("generatorEdgeCountInput"),
   generatorMinWeight: document.getElementById("generatorMinWeightInput"),
   generatorMaxWeight: document.getElementById("generatorMaxWeightInput"),
+  navItems: Array.from(document.querySelectorAll(".navItem")),
+  navPanels: Array.from(document.querySelectorAll(".navPanel")),
+  generateNetwork: document.getElementById("generateNetworkBtn"),
+  generateGeneterrain: document.getElementById("generateGeneterrainBtn"),
+  resultEdges: document.getElementById("resultEdgesBtn"),
+  resultNodes: document.getElementById("resultNodesBtn"),
+  outputGeneterrain: document.getElementById("outputGeneterrainBtn"),
   chatLog: document.getElementById("chatLog"),
   chatInput: document.getElementById("chatInput"),
   chatApply: document.getElementById("chatApplyBtn"),
+  routeSource: document.getElementById("routeSourceInput"),
+  routeTarget: document.getElementById("routeTargetInput"),
+  nodeOptions: document.getElementById("nodeOptions"),
+  planTrip: document.getElementById("planTripBtn"),
   exportEdges: document.getElementById("exportEdgesBtn"),
   exportNodes: document.getElementById("exportNodesBtn"),
   exportShown: document.getElementById("exportShownBtn"),
@@ -95,6 +108,7 @@ const els = {
   zoomReset: document.getElementById("zoomResetBtn"),
   zoomIn: document.getElementById("zoomInBtn"),
   zoomOut: document.getElementById("zoomOutBtn"),
+  explorerFullscreenBtn: document.getElementById("explorerFullscreenBtn"),
   leftPane: document.getElementById("leftPane"),
   sidebarToggle: document.getElementById("sidebarToggleBtn"),
   leftResize: document.getElementById("leftResizeHandle"),
@@ -103,6 +117,8 @@ const els = {
   agentPanel: document.querySelector(".agentPanel"),
   resultsPanel: document.querySelector(".resultsPanel"),
 };
+
+const narrowViewportQuery = window.matchMedia("(max-width: 760px)");
 
 function apiUrl(path) {
   if (window.location.protocol === "file:") {
@@ -152,6 +168,91 @@ function showTooltip(event, html) {
 function hideTooltip() {
   if (!els.tooltip) return;
   els.tooltip.hidden = true;
+}
+
+function setTheme(theme) {
+  state.theme = theme === "dark" ? "dark" : "light";
+  document.body.dataset.theme = state.theme;
+  if (els.themeToggle) {
+    const dark = state.theme === "dark";
+    els.themeToggle.innerHTML = `<span aria-hidden="true">${dark ? "☼" : "☾"}</span>`;
+    els.themeToggle.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+    els.themeToggle.setAttribute("title", dark ? "Switch to light mode" : "Switch to dark mode");
+  }
+  try {
+    window.localStorage.setItem("spinnerTheme", state.theme);
+  } catch (_err) {
+    return;
+  }
+}
+
+function toggleTheme() {
+  setTheme(state.theme === "dark" ? "light" : "dark");
+}
+
+function setSidePanel(panel) {
+  state.activeNavPanel = panel;
+  els.navItems.forEach((item) => {
+    const active = item.getAttribute("data-nav-panel") === panel;
+    item.classList.toggle("active", active);
+    item.setAttribute("aria-current", active ? "page" : "false");
+  });
+  els.navPanels.forEach((section) => {
+    section.classList.toggle("active", section.getAttribute("data-nav-panel") === panel);
+  });
+}
+
+function setResultTab(tab, options = {}) {
+  state.resultTab = tab === "nodes" ? "nodes" : "edges";
+  document.querySelectorAll("#resultTabs button").forEach((button) => {
+    button.classList.toggle("active", button.getAttribute("data-tab") === state.resultTab);
+  });
+  document.querySelectorAll(".tabPanel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === `${state.resultTab}Tab`);
+  });
+  if (options.focus && els.resultsPanel) {
+    els.resultsPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+function setExplorerFullscreen(expanded) {
+  state.explorerFullscreen = Boolean(expanded);
+  document.body.classList.toggle("explorerFullscreen", state.explorerFullscreen);
+  if (els.explorerFullscreenBtn) {
+    els.explorerFullscreenBtn.classList.toggle("active", state.explorerFullscreen);
+    els.explorerFullscreenBtn.textContent = state.explorerFullscreen ? "⤢" : "⛶";
+    els.explorerFullscreenBtn.setAttribute(
+      "aria-label",
+      state.explorerFullscreen ? "Exit full screen network explorer" : "Expand network explorer",
+    );
+    els.explorerFullscreenBtn.setAttribute(
+      "title",
+      state.explorerFullscreen ? "Exit full screen network explorer" : "Expand network explorer",
+    );
+  }
+  requestAnimationFrame(() => render());
+}
+
+function isNarrowViewport() {
+  return narrowViewportQuery.matches;
+}
+
+function setSidebarCollapsed(collapsed) {
+  state.sidebarCollapsed = Boolean(collapsed);
+  document.body.classList.toggle("sidebarCollapsed", state.sidebarCollapsed);
+  els.sidebarToggle.setAttribute("aria-expanded", state.sidebarCollapsed ? "false" : "true");
+  els.sidebarToggle.setAttribute(
+    "aria-label",
+    state.sidebarCollapsed ? "Expand navigation panel" : "Collapse navigation panel",
+  );
+  if (state.sidebarCollapsed) {
+    setCssPxVar("--sidebar-width", 56);
+  } else if (!isNarrowViewport()) {
+    setCssPxVar(
+      "--sidebar-width",
+      Math.max(240, Number.parseFloat(getComputedStyle(els.leftPane).width) || 304),
+    );
+  }
 }
 
 function wiperWeightLine(label, scores) {
@@ -670,6 +771,10 @@ function drawNetwork() {
   if (!state.data) return;
   const nodeIds = activeNodeIds();
   const edgeIds = activeEdgeIds(nodeIds);
+  const routeNodeIds = new Set(state.plannedRoute ? state.plannedRoute.nodes : []);
+  const routeEdgeIds = state.plannedRoute ? state.plannedRoute.edgeIds : new Set();
+  routeNodeIds.forEach((nodeId) => nodeIds.add(nodeId));
+  routeEdgeIds.forEach((edgeId) => edgeIds.add(edgeId));
   ensureLayout(nodeIds, edgeIds);
   els.svg.replaceChildren();
 
@@ -701,7 +806,10 @@ function drawNetwork() {
     line.setAttribute("y2", b.y);
     line.setAttribute("stroke", colorFor(t));
     line.setAttribute("stroke-width", String(edgeStrokeWidth(t)));
-    line.setAttribute("class", `edge ${state.selectedKind === "edge" && edge.id === state.selected ? "selected" : ""}`);
+    line.setAttribute(
+      "class",
+      `edge ${routeEdgeIds.has(edge.id) ? "route" : ""} ${state.selectedKind === "edge" && edge.id === state.selected ? "selected" : ""}`,
+    );
     line.addEventListener("mouseenter", (event) => showTooltip(event, edgeTooltip(edge)));
     line.addEventListener("mousemove", tooltipMove);
     line.addEventListener("mouseleave", hideTooltip);
@@ -721,6 +829,8 @@ function drawNetwork() {
     const originalRadius = rawNodeRadius(node, nodes);
     const activeNode = (selected && (selected.source === node.id || selected.target === node.id))
       || (selectedNodeItem && selectedNodeItem.id === node.id);
+    const routeNode = routeNodeIds.has(node.id);
+    const routeEndpoint = state.plannedRoute && (node.id === state.plannedRoute.sourceId || node.id === state.plannedRoute.targetId);
     const group = document.createElementNS("http://www.w3.org/2000/svg", "g");
     if (state.nodePulse && state.nodePulse.id === node.id) {
       const pulse = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -733,9 +843,9 @@ function drawNetwork() {
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("cx", p.x);
     circle.setAttribute("cy", p.y);
-    circle.setAttribute("r", activeNode ? radius + 3 : radius);
+    circle.setAttribute("r", activeNode || routeEndpoint ? radius + 3 : radius);
     circle.setAttribute("fill", colorFor(t));
-    circle.setAttribute("class", `node ${activeNode ? "active" : ""}`);
+    circle.setAttribute("class", `node ${activeNode ? "active" : ""} ${routeNode ? "route" : ""} ${routeEndpoint ? "routeEndpoint" : ""}`);
     circle.addEventListener("mouseenter", (event) => showTooltip(event, nodeTooltip(node)));
     circle.addEventListener("mousemove", tooltipMove);
     circle.addEventListener("mouseleave", hideTooltip);
@@ -1106,6 +1216,170 @@ function renderSearchResults() {
   });
 }
 
+function updateNodeOptions() {
+  if (!els.nodeOptions || !state.data) return;
+  const signature = state.data.nodes.map((node) => node.id).join("\t");
+  if (els.nodeOptions.dataset.signature === signature) return;
+  els.nodeOptions.dataset.signature = signature;
+  els.nodeOptions.replaceChildren();
+  state.data.nodes.forEach((node) => {
+    const option = document.createElement("option");
+    option.value = node.id;
+    els.nodeOptions.appendChild(option);
+  });
+}
+
+function normalizeNodeToken(value) {
+  return String(value || "").trim().replace(/^[("'[{]+|[)"'\]}.,;:]+$/g, "");
+}
+
+function findNodeId(value) {
+  if (!state.data) return null;
+  const token = normalizeNodeToken(value);
+  if (!token) return null;
+  const exact = state.data.nodes.find((node) => node.id === token);
+  if (exact) return exact.id;
+  const lower = token.toLowerCase();
+  const insensitive = state.data.nodes.find((node) => node.id.toLowerCase() === lower);
+  return insensitive ? insensitive.id : null;
+}
+
+function routeStrength(edge) {
+  const value = edgeValue(edge) ?? edge.rawWeight ?? 0;
+  return Math.max(Number(value) || 0, 0.000001);
+}
+
+function bestRoute(sourceId, targetId) {
+  if (!state.data || sourceId === targetId) return null;
+  const graph = new Map(state.data.nodes.map((node) => [node.id, []]));
+  state.data.edges.forEach((edge) => {
+    if (!graph.has(edge.source) || !graph.has(edge.target)) return;
+    const cost = 1 / routeStrength(edge);
+    graph.get(edge.source).push({ node: edge.target, edge, cost });
+    graph.get(edge.target).push({ node: edge.source, edge, cost });
+  });
+  const distances = new Map(state.data.nodes.map((node) => [node.id, Infinity]));
+  const previous = new Map();
+  const unvisited = new Set(state.data.nodes.map((node) => node.id));
+  distances.set(sourceId, 0);
+
+  while (unvisited.size) {
+    let current = null;
+    let currentDistance = Infinity;
+    unvisited.forEach((nodeId) => {
+      const distance = distances.get(nodeId);
+      if (distance < currentDistance) {
+        current = nodeId;
+        currentDistance = distance;
+      }
+    });
+    if (current === null || currentDistance === Infinity) break;
+    unvisited.delete(current);
+    if (current === targetId) break;
+    graph.get(current).forEach((step) => {
+      if (!unvisited.has(step.node)) return;
+      const distance = currentDistance + step.cost;
+      if (distance < distances.get(step.node)) {
+        distances.set(step.node, distance);
+        previous.set(step.node, { node: current, edge: step.edge });
+      }
+    });
+  }
+
+  if (!previous.has(targetId)) return null;
+  const nodes = [targetId];
+  const edges = [];
+  let current = targetId;
+  while (current !== sourceId) {
+    const step = previous.get(current);
+    if (!step) return null;
+    edges.unshift(step.edge);
+    current = step.node;
+    nodes.unshift(current);
+  }
+  const totalCost = edges.reduce((sum, edge) => sum + (1 / routeStrength(edge)), 0);
+  const averageStrength = edges.reduce((sum, edge) => sum + routeStrength(edge), 0) / Math.max(1, edges.length);
+  return { sourceId, targetId, nodes, edges, totalCost, averageStrength };
+}
+
+function routeSummary(route) {
+  const legs = route.edges.map((edge, index) => {
+    const from = route.nodes[index];
+    const to = route.nodes[index + 1];
+    return `${from}-${to} ${metricLabel()} ${fmt(routeStrength(edge))}`;
+  });
+  return `Trip ${route.sourceId} to ${route.targetId}: ${route.nodes.join(" -> ")}. ${route.edges.length} leg${route.edges.length === 1 ? "" : "s"}; average ${metricLabel()} strength ${fmt(route.averageStrength)}. Legs: ${legs.join("; ")}.`;
+}
+
+function centerRoute(route) {
+  if (!route || !route.nodes.length) return;
+  const points = route.nodes.map((nodeId) => state.positions.get(nodeId)).filter(Boolean);
+  if (!points.length) return;
+  const minX = Math.min(...points.map((point) => point.x));
+  const maxX = Math.max(...points.map((point) => point.x));
+  const minY = Math.min(...points.map((point) => point.y));
+  const maxY = Math.max(...points.map((point) => point.y));
+  const spanX = Math.max(80, maxX - minX);
+  const spanY = Math.max(80, maxY - minY);
+  state.zoom = clamp(Math.min(3.2, 720 / spanX, 480 / spanY), 0.7, 3.2);
+  state.panX = 450 - ((minX + maxX) / 2) * state.zoom;
+  state.panY = 310 - ((minY + maxY) / 2) * state.zoom;
+}
+
+function planTrip(sourceValue, targetValue) {
+  if (!state.data) {
+    addChatMessage("agent", "Analyze or generate a network before planning a trip.");
+    return false;
+  }
+  const sourceId = findNodeId(sourceValue);
+  const targetId = findNodeId(targetValue);
+  if (!sourceId || !targetId) {
+    addChatMessage("agent", "I could not find both nodes in the current network. Try exact node names from the graph.");
+    return false;
+  }
+  if (sourceId === targetId) {
+    addChatMessage("agent", "Pick two different nodes for trip planning.");
+    return false;
+  }
+  const route = bestRoute(sourceId, targetId);
+  if (!route) {
+    state.plannedRoute = null;
+    render();
+    addChatMessage("agent", `No connected route found between ${sourceId} and ${targetId}.`);
+    return false;
+  }
+  state.plannedRoute = {
+    sourceId,
+    targetId,
+    nodes: route.nodes,
+    edgeIds: new Set(route.edges.map((edge) => edge.id)),
+  };
+  if (els.routeSource) els.routeSource.value = sourceId;
+  if (els.routeTarget) els.routeTarget.value = targetId;
+  state.selectedKind = "edge";
+  state.selected = route.edges[0].id;
+  state.detailsHidden = false;
+  render();
+  centerRoute(route);
+  drawNetwork();
+  addChatMessage("agent", routeSummary(route));
+  return true;
+}
+
+function parseRouteInstruction(text) {
+  const token = "([A-Za-z0-9_.:-]+)";
+  const patterns = [
+    new RegExp(`\\b(?:route|navigate|trip|path|plan(?:\\s+trip)?)\\b.*?\\bfrom\\s+${token}\\s+(?:to|toward|->)\\s+${token}`, "i"),
+    new RegExp(`\\bfrom\\s+${token}\\s+(?:to|toward|->)\\s+${token}`, "i"),
+    new RegExp(`\\b(?:route|navigate|trip|path|plan(?:\\s+trip)?)\\b\\s+${token}\\s+(?:to|toward|and|->)\\s+${token}`, "i"),
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return [normalizeNodeToken(match[1]), normalizeNodeToken(match[2])];
+  }
+  return null;
+}
+
 function render() {
   if (!state.data) return;
   const s = state.data.summary;
@@ -1113,8 +1387,10 @@ function render() {
   const edgeIds = activeEdgeIds(nodeIds);
   els.summary.textContent = `${nodeIds.size}/${s.nodeCount} nodes, ${edgeIds.size}/${s.inputEdgeCount} edges shown, ${s.iterations} iterations`;
   if (els.viewSummary) {
-    els.viewSummary.textContent = `${state.layoutMode.toUpperCase()} layout, ${metricLabel()} ${state.metric === "raw" ? "raw" : state.edgeMeasure.toUpperCase()} view, ${state.edgeScale} edge scale`;
+    const routeText = state.plannedRoute ? `, trip ${state.plannedRoute.sourceId} to ${state.plannedRoute.targetId}` : "";
+    els.viewSummary.textContent = `${state.layoutMode.toUpperCase()} layout, ${metricLabel()} ${state.metric === "raw" ? "raw" : state.edgeMeasure.toUpperCase()} view, ${state.edgeScale} edge scale${routeText}`;
   }
+  updateNodeOptions();
   drawNetwork();
   renderTable();
   renderNodesTable();
@@ -1146,6 +1422,7 @@ async function analyze() {
   state.data = result;
   state.positions = new Map();
   state.layoutSignature = "";
+  state.plannedRoute = null;
   state.selected = result.edges[0] && result.edges[0].id;
   state.selectedKind = "edge";
   render();
@@ -1335,6 +1612,16 @@ function exportShownNetwork() {
   downloadText("spinner_backbone_network.tsv", rowsToTsv(shownNetworkRows()));
 }
 
+function outputGeneterrainNetwork() {
+  downloadText("spinner_geneterrain_network.tsv", rowsToTsv(shownNetworkRows()));
+  addChatMessage("agent", "Exported the visible network as a Geneterrain-ready TSV.");
+}
+
+function outputNotionReport() {
+  exportMarkdown();
+  addChatMessage("agent", "Exported a Notion-ready Markdown report.");
+}
+
 function htmlTable(rows) {
   return `<table>${rows.map((row, i) => `<tr>${row.map((cell) => `<${i === 0 ? "th" : "td"}>${escapeHtml(cell === null || cell === undefined ? "" : cell)}</${i === 0 ? "th" : "td"}>`).join("")}</tr>`).join("")}</table>`;
 }
@@ -1445,16 +1732,13 @@ function setupResizablePanels() {
   let resultsStart = 260;
   setupDrag(els.leftResize, (dx) => {
     if (state.sidebarCollapsed) {
-      state.sidebarCollapsed = false;
-      document.body.classList.remove("sidebarCollapsed");
-      els.sidebarToggle.textContent = "Input";
-      els.sidebarToggle.setAttribute("aria-expanded", "true");
+      setSidebarCollapsed(false);
       sidebarStart = 260;
     }
     setCssPxVar("--sidebar-width", clamp(sidebarStart + dx, 180, 520));
   });
   els.leftResize && els.leftResize.addEventListener("pointerdown", () => {
-    sidebarStart = state.sidebarCollapsed ? 46 : els.leftPane.getBoundingClientRect().width;
+    sidebarStart = state.sidebarCollapsed ? 56 : els.leftPane.getBoundingClientRect().width;
   });
 
   setupDrag(els.agentResize, (dx) => {
@@ -1473,23 +1757,7 @@ function setupResizablePanels() {
   });
 
   els.sidebarToggle.addEventListener("click", () => {
-    state.sidebarCollapsed = !state.sidebarCollapsed;
-    document.body.classList.toggle("sidebarCollapsed", state.sidebarCollapsed);
-    els.sidebarToggle.textContent = "Input";
-    els.sidebarToggle.setAttribute(
-      "aria-expanded",
-      state.sidebarCollapsed ? "false" : "true",
-    );
-    els.sidebarToggle.setAttribute(
-      "aria-label",
-      state.sidebarCollapsed ? "Expand input panel" : "Collapse input panel",
-    );
-    if (!state.sidebarCollapsed) {
-      setCssPxVar(
-        "--sidebar-width",
-        Math.max(240, Number.parseFloat(getComputedStyle(els.leftPane).width) || 318),
-      );
-    }
+    setSidebarCollapsed(!state.sidebarCollapsed);
   });
 }
 
@@ -1506,6 +1774,7 @@ function applyChatInstruction() {
   const nodesMatch = lower.match(/(\d+)\s+nodes?/);
   const edgesMatch = lower.match(/(\d+)\s+edges?/);
   const iterationsMatch = lower.match(/(\d+)\s+iterations?/);
+  const routeRequest = parseRouteInstruction(text);
 
   if (lower.includes("wiper2")) {
     setSegment("metricSegments", "metric", "wiper2", "data-metric");
@@ -1577,7 +1846,11 @@ function applyChatInstruction() {
     els.iterations.value = iterationsMatch[1];
     notes.push(`${iterationsMatch[1]} iterations`);
   }
-  if (lower.includes("geneterrain")) {
+  if (routeRequest) {
+    state.layoutSignature = "";
+    if (notes.length) addChatMessage("agent", `Applied: ${notes.join("; ")}.`);
+    planTrip(routeRequest[0], routeRequest[1]);
+  } else if (lower.includes("geneterrain")) {
     makeGeneterrain();
     addChatMessage("agent", "Generated a Geneterrain-style seeded neighborhood and rescored it.");
   } else if (lower.includes("generate")) {
@@ -1619,21 +1892,37 @@ setupNetworkZoom();
 document.getElementById("resultTabs").addEventListener("click", (event) => {
   const button = event.target.closest("button[data-tab]");
   if (!button) return;
-  state.resultTab = button.getAttribute("data-tab");
-  document.querySelectorAll("#resultTabs button").forEach((b) => b.classList.toggle("active", b === button));
-  document.querySelectorAll(".tabPanel").forEach((panel) => panel.classList.toggle("active", panel.id === `${state.resultTab}Tab`));
+  setResultTab(button.getAttribute("data-tab"));
 });
 
-els.analyze.addEventListener("click", analyze);
-els.sample.addEventListener("click", () => {
-  els.edgeText.value = sampleNetwork;
-  analyze();
+els.themeToggle.addEventListener("click", toggleTheme);
+els.account.addEventListener("click", () => {
+  addChatMessage("agent", "Account settings are reserved for future workspace customization.");
 });
-els.random.addEventListener("click", makeRandom);
-els.geneterrain.addEventListener("click", makeGeneterrain);
+els.navItems.forEach((item) => {
+  item.addEventListener("click", () => {
+    setSidePanel(item.getAttribute("data-nav-panel"));
+    if (state.sidebarCollapsed) {
+      setSidebarCollapsed(false);
+    }
+  });
+});
+els.generateNetwork.addEventListener("click", makeRandom);
+els.generateGeneterrain.addEventListener("click", makeGeneterrain);
+els.resultEdges.addEventListener("click", () => setResultTab("edges", { focus: true }));
+els.resultNodes.addEventListener("click", () => setResultTab("nodes", { focus: true }));
+els.outputGeneterrain.addEventListener("click", outputGeneterrainNetwork);
 els.zoomReset.addEventListener("click", resetZoom);
 els.zoomIn.addEventListener("click", () => zoomBy(1.22));
 els.zoomOut.addEventListener("click", () => zoomBy(0.82));
+els.explorerFullscreenBtn.addEventListener("click", () => {
+  setExplorerFullscreen(!state.explorerFullscreen);
+});
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && state.explorerFullscreen) {
+    setExplorerFullscreen(false);
+  }
+});
 els.networkSettingsBtn.addEventListener("click", () => {
   els.networkSettings.hidden = !els.networkSettings.hidden;
 });
@@ -1670,11 +1959,21 @@ els.chatInput.addEventListener("keydown", (event) => {
     applyChatInstruction();
   }
 });
+els.planTrip.addEventListener("click", () => {
+  planTrip(els.routeSource.value, els.routeTarget.value);
+});
+[els.routeSource, els.routeTarget].forEach((input) => {
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      planTrip(els.routeSource.value, els.routeTarget.value);
+    }
+  });
+});
 els.exportEdges.addEventListener("click", exportEdges);
 els.exportNodes.addEventListener("click", exportNodes);
 els.exportShown.addEventListener("click", exportShownNetwork);
 els.exportExcel.addEventListener("click", exportExcel);
-els.exportMarkdown.addEventListener("click", exportMarkdown);
+els.exportMarkdown.addEventListener("click", outputNotionReport);
 els.exportWord.addEventListener("click", exportWord);
 els.exportFigure.addEventListener("click", exportFigure);
 [
@@ -1699,6 +1998,18 @@ els.fileInput.addEventListener("change", async () => {
   analyze();
 });
 
+try {
+  setTheme(window.localStorage.getItem("spinnerTheme") || "light");
+} catch (_err) {
+  setTheme("light");
+}
+setSidePanel("input");
+if (isNarrowViewport()) setSidebarCollapsed(true);
+window.addEventListener("resize", () => {
+  if (isNarrowViewport() && !state.sidebarCollapsed) {
+    setSidebarCollapsed(true);
+  }
+});
 els.edgeText.value = sampleNetwork;
-addChatMessage("agent", "Tell me how to shape the network: choose WIPER1 or WIPER2, show top N edges, generate a scale-free graph, or run Geneterrain.");
+addChatMessage("agent", "Tell me how to shape the network: choose WIPER1 or WIPER2, show top N edges, plan a trip from A to F, generate a scale-free graph, run Geneterrain, or analyze the current input.");
 analyze();
