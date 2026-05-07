@@ -62,6 +62,9 @@ const els = {
   explorerSearch: document.getElementById("explorerSearchInput"),
   explorerSearchResults: document.getElementById("explorerSearchResults"),
   explorerDetails: document.getElementById("explorerDetails"),
+  explorerDetailsBody: document.getElementById("explorerDetailsBody"),
+  explorerDetailsClose: document.getElementById("explorerDetailsCloseBtn"),
+  explorerDetailsShow: document.getElementById("explorerDetailsShowBtn"),
   edgeTopN: document.getElementById("edgeTopNInput"),
   edgeTopPercent: document.getElementById("edgeTopPercentInput"),
   edgeThreshold: document.getElementById("edgeThresholdInput"),
@@ -400,6 +403,7 @@ function edgeLabel(edge) {
 function selectGraphItem(kind, id, options = {}) {
   state.selectedKind = kind;
   state.selected = id;
+  state.detailsHidden = false;
   if (els.explorerSearch && options.updateSearch !== false) {
     els.explorerSearch.value = kind === "edge" ? edgeLabel({ id }) : id;
     els.explorerSearchResults.hidden = true;
@@ -735,17 +739,7 @@ function drawNetwork() {
     circle.addEventListener("mouseenter", (event) => showTooltip(event, nodeTooltip(node)));
     circle.addEventListener("mousemove", tooltipMove);
     circle.addEventListener("mouseleave", hideTooltip);
-    circle.addEventListener("click", () => {
-      selectGraphItem("node", node.id, { updateSearch: true });
-      state.nodePulse = { id: node.id };
-      drawNetwork();
-      window.setTimeout(() => {
-        if (state.nodePulse && state.nodePulse.id === node.id) {
-          state.nodePulse = null;
-          drawNetwork();
-        }
-      }, 720);
-    });
+    circle.addEventListener("pointerdown", (event) => beginNodeDrag(event, node.id));
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("x", p.x + radius + 5);
     label.setAttribute("y", p.y + 4);
@@ -784,6 +778,61 @@ function zoomBy(factor) {
   state.panX = point.x - worldX * next;
   state.panY = point.y - worldY * next;
   drawNetwork();
+}
+
+function beginNodeDrag(event, nodeId) {
+  if (event.button !== undefined && event.button !== 0) return;
+  const pos = state.positions.get(nodeId);
+  if (!pos) return;
+  event.preventDefault();
+  event.stopPropagation();
+  hideTooltip();
+  const start = svgPointFromEvent(event);
+  const drag = {
+    pointerId: event.pointerId,
+    startVB: start,
+    startWorld: { x: pos.x, y: pos.y },
+    moved: false,
+    nodeId,
+  };
+  els.svg.classList.add("nodeDragging");
+  document.body.classList.add("nodeDragging");
+
+  const onMove = (e) => {
+    if (e.pointerId !== drag.pointerId) return;
+    const cur = svgPointFromEvent(e);
+    const dxVB = cur.x - drag.startVB.x;
+    const dyVB = cur.y - drag.startVB.y;
+    if (!drag.moved && Math.hypot(dxVB, dyVB) > 2) drag.moved = true;
+    const zoom = state.zoom || 1;
+    state.positions.set(drag.nodeId, {
+      x: drag.startWorld.x + dxVB / zoom,
+      y: drag.startWorld.y + dyVB / zoom,
+    });
+    if (drag.moved) drawNetwork();
+  };
+  const onUp = (e) => {
+    if (e.pointerId !== drag.pointerId) return;
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    window.removeEventListener("pointercancel", onUp);
+    els.svg.classList.remove("nodeDragging");
+    document.body.classList.remove("nodeDragging");
+    if (!drag.moved) {
+      selectGraphItem("node", drag.nodeId, { updateSearch: true });
+      state.nodePulse = { id: drag.nodeId };
+      drawNetwork();
+      window.setTimeout(() => {
+        if (state.nodePulse && state.nodePulse.id === drag.nodeId) {
+          state.nodePulse = null;
+          drawNetwork();
+        }
+      }, 720);
+    }
+  };
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
 }
 
 function setupNetworkZoom() {
@@ -940,11 +989,16 @@ function detailLinesHtml(lines) {
 
 function renderExplorerDetails() {
   if (!els.explorerDetails) return;
+  const body = els.explorerDetailsBody || els.explorerDetails;
   const edge = selectedEdge();
   const node = selectedNode();
-  if (!edge && !node) {
+  const hasSelection = Boolean(edge || node);
+  if (els.explorerDetailsShow) {
+    els.explorerDetailsShow.hidden = !(hasSelection && state.detailsHidden);
+  }
+  if (!hasSelection || state.detailsHidden) {
     els.explorerDetails.hidden = true;
-    els.explorerDetails.textContent = "";
+    body.textContent = "";
     return;
   }
   els.explorerDetails.hidden = false;
@@ -952,7 +1006,7 @@ function renderExplorerDetails() {
     const nodeMap = new Map(state.data.nodes.map((item) => [item.id, item]));
     const source = nodeMap.get(edge.source);
     const target = nodeMap.get(edge.target);
-    els.explorerDetails.innerHTML = `
+    body.innerHTML = `
       <details open>
         <summary>${escapeHtml(edgeLabel(edge))}<span class="searchScore">edge</span></summary>
         ${detailLinesHtml([
@@ -961,7 +1015,7 @@ function renderExplorerDetails() {
           ["Reason", edgeReason(edge)],
         ])}
       </details>
-      <details open>
+      <details>
         <summary>WIPER scores<span class="searchScore">${metricLabel()}</span></summary>
         ${detailLinesHtml([
           ["WIPER1 UFC", `${fmt(edge.wiper1 && edge.wiper1.ufc0)} -> ${fmt(edge.wiper1 && edge.wiper1.score)}`],
@@ -984,7 +1038,7 @@ function renderExplorerDetails() {
     .filter((item) => item.source === node.id || item.target === node.id)
     .sort((a, b) => Number(edgeValue(b) || 0) - Number(edgeValue(a) || 0))
     .slice(0, 8);
-  els.explorerDetails.innerHTML = `
+  body.innerHTML = `
     <details open>
       <summary>${escapeHtml(node.id)}<span class="searchScore">node</span></summary>
       ${detailLinesHtml([
@@ -994,7 +1048,7 @@ function renderExplorerDetails() {
         ["Rank", `#${node.rank}`],
       ])}
     </details>
-    <details open>
+    <details>
       <summary>Incident edge scores<span class="searchScore">${incident.length}</span></summary>
       ${detailLinesHtml(incident.map((item) => [
         edgeLabel(item),
@@ -1025,7 +1079,7 @@ function searchItems(query) {
       score: `${metricLabel()} ${fmt(edgeValue(edge))}`,
       rank: edgeRank(edge, state.metric) || 999999,
     }));
-  return [...nodes, ...edges].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name)).slice(0, 8);
+  return [...nodes, ...edges].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name)).slice(0, 50);
 }
 
 function renderSearchResults() {
@@ -1394,6 +1448,7 @@ function setupResizablePanels() {
       state.sidebarCollapsed = false;
       document.body.classList.remove("sidebarCollapsed");
       els.sidebarToggle.textContent = "Input";
+      els.sidebarToggle.setAttribute("aria-expanded", "true");
       sidebarStart = 260;
     }
     setCssPxVar("--sidebar-width", clamp(sidebarStart + dx, 180, 520));
@@ -1420,12 +1475,21 @@ function setupResizablePanels() {
   els.sidebarToggle.addEventListener("click", () => {
     state.sidebarCollapsed = !state.sidebarCollapsed;
     document.body.classList.toggle("sidebarCollapsed", state.sidebarCollapsed);
-    els.sidebarToggle.textContent = state.sidebarCollapsed ? "Input" : "Input";
+    els.sidebarToggle.textContent = "Input";
+    els.sidebarToggle.setAttribute(
+      "aria-expanded",
+      state.sidebarCollapsed ? "false" : "true",
+    );
+    els.sidebarToggle.setAttribute(
+      "aria-label",
+      state.sidebarCollapsed ? "Expand input panel" : "Collapse input panel",
+    );
     if (!state.sidebarCollapsed) {
-      setCssPxVar("--sidebar-width", Math.max(240, Number.parseFloat(getComputedStyle(els.leftPane).width) || 318));
+      setCssPxVar(
+        "--sidebar-width",
+        Math.max(240, Number.parseFloat(getComputedStyle(els.leftPane).width) || 318),
+      );
     }
-    state.layoutSignature = "";
-    render();
   });
 }
 
@@ -1576,6 +1640,18 @@ els.networkSettingsBtn.addEventListener("click", () => {
 els.networkSettingsClose.addEventListener("click", () => {
   els.networkSettings.hidden = true;
 });
+if (els.explorerDetailsClose) {
+  els.explorerDetailsClose.addEventListener("click", () => {
+    state.detailsHidden = true;
+    render();
+  });
+}
+if (els.explorerDetailsShow) {
+  els.explorerDetailsShow.addEventListener("click", () => {
+    state.detailsHidden = false;
+    render();
+  });
+}
 els.filter.addEventListener("input", () => {
   renderTable();
   renderNodesTable();
