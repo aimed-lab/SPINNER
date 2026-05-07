@@ -1,0 +1,9 @@
+{
+  "version": 2,
+  "outputDirectory": "src/spinner/web",
+  "functions": {
+    "api/analyze.py": {
+      "maxDuration": 60
+    }
+  }
+}

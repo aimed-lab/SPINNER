@@ -184,7 +184,11 @@
               <div class="mapSearchBox">
                 <input id="explorerSearchInput" type="search" autocomplete="off" placeholder="Search node or edge" aria-label="Search node or edge" />
                 <div id="explorerSearchResults" class="mapSearchResults" hidden></div>
-                <div id="explorerDetails" class="mapDetails" hidden></div>
+                <button id="explorerDetailsShowBtn" type="button" class="mapDetailsShow" hidden>Show details</button>
+                <div id="explorerDetails" class="mapDetails" hidden>
+                  <button id="explorerDetailsCloseBtn" type="button" class="mapDetailsClose" aria-label="Close details">×</button>
+                  <div id="explorerDetailsBody"></div>
+                </div>
               </div>
               <div class="mapActionStack">
                 <button id="networkSettingsBtn" type="button" class="mapIconButton" aria-label="Network settings">⚙</button>
@@ -223,7 +227,10 @@
               <button type="button" data-tab="nodes">Nodes</button>
               <button type="button" data-tab="export">Export</button>
             </div>
-            <input id="filterInput" type="search" placeholder="Filter edge or node" />
+            <label class="resultsFilter">
+              <span class="resultsFilterIcon" aria-hidden="true">⌕</span>
+              <input id="filterInput" type="search" placeholder="Filter rows" aria-label="Filter rows" />
+            </label>
           </div>
           <div class="tabPanel active" id="edgesTab">
             <div class="tableScroll">
