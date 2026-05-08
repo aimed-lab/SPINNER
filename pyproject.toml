@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spinner-net"
-version = "0.1.0"
+version = "1.100"
 description = "network SPINNER: Seeded Protein Interaction Network Neighborhood Expansion and Ranking"
 readme = "README.md"
 requires-python = ">=3.9"
