@@ -19,18 +19,19 @@ D\tH\t0.38`;
 const state = {
   data: null,
   metric: "wiper2",
-  edgeMeasure: "ufc",
+  edgeMeasure: "weight",
   edgeScale: "normal",
   nodeScale: "log",
   nodeSizeMode: "relative",
-  layoutMode: "dema",
-  generatorModel: "random",
+  layoutMode: "force",
+  generatorModel: "scale-free",
   resultTab: "edges",
   activeNavPanel: "input",
-  sidebarCollapsed: false,
+  sidebarCollapsed: true,
   theme: "light",
   explorerFullscreen: false,
   plannedRoute: null,
+  routeMode: "wiper2",
   zoom: 1,
   panX: 0,
   panY: 0,
@@ -105,7 +106,6 @@ const els = {
   networkSettings: document.getElementById("networkSettingsPanel"),
   networkSettingsBtn: document.getElementById("networkSettingsBtn"),
   networkSettingsClose: document.getElementById("networkSettingsCloseBtn"),
-  zoomReset: document.getElementById("zoomResetBtn"),
   zoomIn: document.getElementById("zoomInBtn"),
   zoomOut: document.getElementById("zoomOutBtn"),
   explorerFullscreenBtn: document.getElementById("explorerFullscreenBtn"),
@@ -413,7 +413,10 @@ function colorFor(t) {
 }
 
 function edgeStrokeWidth(t) {
-  return 1.2 + 9.5 * Math.max(0, Math.min(1, t));
+  // 0..1 normalized score → ~10x range with non-linear emphasis on stronger edges.
+  // Min ~0.8px, max ~8.8px; t^1.5 keeps weak ties thin so heavy ties stand out clearly.
+  const c = Math.max(0, Math.min(1, t));
+  return 0.8 + 8 * Math.pow(c, 1.5);
 }
 
 function edgeLegendLabel() {
@@ -504,7 +507,7 @@ function edgeLabel(edge) {
 function selectGraphItem(kind, id, options = {}) {
   state.selectedKind = kind;
   state.selected = id;
-  state.detailsHidden = false;
+  state.detailsHidden = true;
   if (els.explorerSearch && options.updateSearch !== false) {
     els.explorerSearch.value = kind === "edge" ? edgeLabel({ id }) : id;
     els.explorerSearchResults.hidden = true;
@@ -612,7 +615,9 @@ function relaxLayout(nodes, edges, componentCenters, radii, options) {
   const area = width * height;
   const ideal = Math.sqrt(area / Math.max(1, visibleNodeIds.length)) * options.idealScale;
   let temperature = Math.min(width, height) * options.temperature;
-  for (let tick = 0; tick < options.ticks; tick += 1) {
+  const iterInput = (typeof els !== "undefined" && els.iterations && Number(els.iterations.value)) || 0;
+  const maxTicks = iterInput > 0 ? Math.max(40, iterInput * 8) : options.ticks;
+  for (let tick = 0; tick < maxTicks; tick += 1) {
     visibleNodeIds.forEach((id) => {
       const p = state.positions.get(id);
       p.dx = 0;
@@ -630,9 +635,17 @@ function relaxLayout(nodes, edges, componentCenters, radii, options) {
           dy = seededJitter(`${visibleNodeIds[i]}:${visibleNodeIds[j]}:y`) || 0.01;
           dist = Math.sqrt(dx * dx + dy * dy) || 1;
         }
-        const clearance = (radii.get(visibleNodeIds[i]) || 8) + (radii.get(visibleNodeIds[j]) || 8) + options.gap;
-        const overlapBoost = dist < clearance ? (clearance - dist) * options.collisionRepel : 0;
-        const force = ((ideal * ideal) / dist) * options.repel + overlapBoost;
+        const ra = radii.get(visibleNodeIds[i]) || 8;
+        const rb = radii.get(visibleNodeIds[j]) || 8;
+        const clearance = ra + rb + options.gap;
+        // Hard collision push: prevents overlap, scales with how much the balls intersect.
+        const overlapBoost = dist < clearance ? (clearance - dist) * options.collisionRepel * 4 : 0;
+        // Soft long-range repel — falls off faster than classic FR (1/r^2 not k^2/r),
+        // so springs can shrink edges instead of being out-pushed by every node pair.
+        // Scales with sum of radii so big balls push harder than small ones.
+        const sizeFactor = (ra + rb) / 16;
+        const longRange = (clearance * clearance) / (dist * dist) * options.repel * sizeFactor * 18;
+        const force = longRange + overlapBoost;
         const fx = (dx / dist) * force;
         const fy = (dy / dist) * force;
         a.dx += fx;
@@ -649,8 +662,16 @@ function relaxLayout(nodes, edges, componentCenters, radii, options) {
       const dy = b.y - a.y;
       const dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
       const raw = Math.max(0.05, edge.rawWeight || 0.3);
-      const desired = ideal * (options.inverseWeights ? 1.45 - raw * 0.7 : 0.75 + raw * 0.45);
-      const force = (dist - desired) * options.attract;
+      const ra = radii.get(edge.source) || 8;
+      const rb = radii.get(edge.target) || 8;
+      // Desired length = just clear of the two node boundaries plus a small label gap.
+      // This minimizes edge length while preventing overlap.
+      const minSep = ra + rb + 14;
+      const slack = options.inverseWeights ? (40 - raw * 22) : (24 - raw * 18);
+      const desired = minSep + Math.max(0, slack);
+      // Spring stiffness scales with edge weight — strong ties pull tight.
+      const weightFactor = options.inverseWeights ? (1.4 - raw * 0.6) : (0.6 + raw * 1.6);
+      const force = (dist - desired) * options.attract * weightFactor * 1.6;
       const fx = (dx / dist) * force;
       const fy = (dy / dist) * force;
       a.dx += fx;
@@ -778,6 +799,27 @@ function drawNetwork() {
   ensureLayout(nodeIds, edgeIds);
   els.svg.replaceChildren();
 
+  // Grid background — Google Maps / Figma-style canvas grid
+  const gridDefs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+  gridDefs.innerHTML = `
+    <pattern id="canvasGridSm" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="var(--canvas-grid-fine, rgba(15, 23, 42, 0.06))" stroke-width="0.6"/>
+    </pattern>
+    <pattern id="canvasGrid" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
+      <rect width="100" height="100" fill="url(#canvasGridSm)"/>
+      <path d="M 100 0 L 0 0 0 100" fill="none" stroke="var(--canvas-grid-major, rgba(15, 23, 42, 0.10))" stroke-width="0.9"/>
+    </pattern>
+  `;
+  els.svg.appendChild(gridDefs);
+  const gridRect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  gridRect.setAttribute("x", "-2000");
+  gridRect.setAttribute("y", "-2000");
+  gridRect.setAttribute("width", "4900");
+  gridRect.setAttribute("height", "4620");
+  gridRect.setAttribute("fill", "url(#canvasGrid)");
+  gridRect.setAttribute("pointer-events", "none");
+  els.svg.appendChild(gridRect);
+
   const nodes = state.data.nodes.filter((node) => nodeIds.has(node.id));
   const edges = state.data.edges.filter((edge) => edgeIds.has(edge.id));
   const [edgeMin, edgeMax] = range(edges, scaledEdgeValue);
@@ -808,7 +850,7 @@ function drawNetwork() {
     line.setAttribute("stroke-width", String(edgeStrokeWidth(t)));
     line.setAttribute(
       "class",
-      `edge ${routeEdgeIds.has(edge.id) ? "route" : ""} ${state.selectedKind === "edge" && edge.id === state.selected ? "selected" : ""}`,
+      `edge ${routeEdgeIds.has(edge.id) ? "route" : (state.plannedRoute ? "dim" : "")} ${state.selectedKind === "edge" && edge.id === state.selected ? "selected" : ""} ${state.searchMatches && state.searchMatches.edges.has(edge.id) ? "match" : ""} ${state.searchMatches && !state.searchMatches.edges.has(edge.id) ? "searchDim" : ""}`,
     );
     line.addEventListener("mouseenter", (event) => showTooltip(event, edgeTooltip(edge)));
     line.addEventListener("mousemove", tooltipMove);
@@ -845,7 +887,7 @@ function drawNetwork() {
     circle.setAttribute("cy", p.y);
     circle.setAttribute("r", activeNode || routeEndpoint ? radius + 3 : radius);
     circle.setAttribute("fill", colorFor(t));
-    circle.setAttribute("class", `node ${activeNode ? "active" : ""} ${routeNode ? "route" : ""} ${routeEndpoint ? "routeEndpoint" : ""}`);
+    circle.setAttribute("class", `node ${activeNode ? "active" : ""} ${routeNode ? "route" : ""} ${routeEndpoint ? "routeEndpoint" : ""} ${state.plannedRoute && !routeNode ? "dim" : ""} ${state.searchMatches && state.searchMatches.nodes.has(node.id) ? "match" : ""} ${state.searchMatches && !state.searchMatches.nodes.has(node.id) ? "searchDim" : ""}`);
     circle.addEventListener("mouseenter", (event) => showTooltip(event, nodeTooltip(node)));
     circle.addEventListener("mousemove", tooltipMove);
     circle.addEventListener("mouseleave", hideTooltip);
@@ -853,7 +895,7 @@ function drawNetwork() {
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
     label.setAttribute("x", p.x + radius + 5);
     label.setAttribute("y", p.y + 4);
-    label.setAttribute("class", "nodeLabel");
+    label.setAttribute("class", `nodeLabel${state.plannedRoute && !routeNode ? " dim" : ""}${state.searchMatches && !state.searchMatches.nodes.has(node.id) ? " searchDim" : ""}${state.searchMatches && state.searchMatches.nodes.has(node.id) ? " match" : ""}`);
     label.textContent = node.id;
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
     title.textContent = `${node.id}: WINNER ${fmt(node.winner)} rank ${node.rank}`;
@@ -1116,24 +1158,37 @@ function renderExplorerDetails() {
     const nodeMap = new Map(state.data.nodes.map((item) => [item.id, item]));
     const source = nodeMap.get(edge.source);
     const target = nodeMap.get(edge.target);
+    const m = state.metric;
+    const measureLabel = state.edgeMeasure === "weight" ? "W" : "UFC";
+    let topRows;
+    if (m === "raw") {
+      topRows = [
+        ["Raw weight", fmt(edge.rawWeight)],
+        ["Raw rank", `#${edge.rawRank || "-"}`],
+        ["Reason", edgeReason(edge)],
+      ];
+    } else {
+      const bucket = m === "wiper1" ? edge.wiper1 : edge.wiper2;
+      topRows = [
+        [`${metricLabel()} ${measureLabel}`, fmt(edgeValue(edge))],
+        [`${metricLabel()} rank`, `#${edgeRank(edge, m) || "-"}`],
+        ["Reason", edgeReason(edge)],
+      ];
+      if (bucket) {
+        if (state.edgeMeasure === "weight") {
+          topRows.push([`${metricLabel()} initial W`, fmt(bucket.w0)]);
+        } else {
+          topRows.push([`${metricLabel()} initial UFC`, fmt(bucket.ufc0)]);
+        }
+        if (m === "wiper2" && bucket.pathLoad !== undefined) {
+          topRows.push(["Path load", fmt(bucket.pathLoad)]);
+        }
+      }
+    }
     body.innerHTML = `
       <details open>
-        <summary>${escapeHtml(edgeLabel(edge))}<span class="searchScore">edge</span></summary>
-        ${detailLinesHtml([
-          ["Raw weight", fmt(edge.rawWeight)],
-          ["Raw rank", `#${edge.rawRank || "-"}`],
-          ["Reason", edgeReason(edge)],
-        ])}
-      </details>
-      <details>
-        <summary>WIPER scores<span class="searchScore">${metricLabel()}</span></summary>
-        ${detailLinesHtml([
-          ["WIPER1 UFC", `${fmt(edge.wiper1 && edge.wiper1.ufc0)} -> ${fmt(edge.wiper1 && edge.wiper1.score)}`],
-          ["WIPER1 W", `${fmt(edge.wiper1 && edge.wiper1.w0)} -> ${fmt(edge.wiper1 && edge.wiper1.weight)}`],
-          ["WIPER2 UFC", `${fmt(edge.wiper2 && edge.wiper2.ufc0)} -> ${fmt(edge.wiper2 && edge.wiper2.score)}`],
-          ["WIPER2 W", `${fmt(edge.wiper2 && edge.wiper2.w0)} -> ${fmt(edge.wiper2 && edge.wiper2.weight)}`],
-          ["Path load", fmt(edge.wiper2 && edge.wiper2.pathLoad)],
-        ])}
+        <summary>${escapeHtml(edgeLabel(edge))}<span class="searchScore">${metricLabel()} ${m === "raw" ? "raw" : measureLabel}</span></summary>
+        ${detailLinesHtml(topRows)}
       </details>
       <details>
         <summary>Endpoint WINNER scores<span class="searchScore">nodes</span></summary>
@@ -1162,7 +1217,7 @@ function renderExplorerDetails() {
       <summary>Incident edge scores<span class="searchScore">${incident.length}</span></summary>
       ${detailLinesHtml(incident.map((item) => [
         edgeLabel(item),
-        `${metricLabel()} ${fmt(edgeValue(item))}; raw ${fmt(item.rawWeight)}`,
+        `${metricLabel()} ${fmt(edgeValue(item))}`,
       ]))}
     </details>`;
 }
@@ -1194,7 +1249,23 @@ function searchItems(query) {
 
 function renderSearchResults() {
   if (!els.explorerSearchResults || !els.explorerSearch) return;
-  const results = searchItems(els.explorerSearch.value);
+  const query = els.explorerSearch.value;
+  const trimmed = query ? query.trim() : "";
+  const focused = document.activeElement === els.explorerSearch;
+  const results = searchItems(query);
+  // Maintain a global highlight set the SVG can read to mark matched items.
+  const prev = state.searchMatches;
+  if (trimmed.length && focused) {
+    state.searchMatches = {
+      nodes: new Set(results.filter((r) => r.kind === "node").map((r) => r.id)),
+      edges: new Set(results.filter((r) => r.kind === "edge").map((r) => r.id)),
+    };
+  } else {
+    state.searchMatches = null;
+  }
+  const sig = (m) => m ? `${[...m.nodes].sort().join("|")}::${[...m.edges].sort().join("|")}` : "";
+  if (sig(prev) !== sig(state.searchMatches)) drawNetwork();
+  if (!focused) { els.explorerSearchResults.hidden = true; return; }
   els.explorerSearchResults.replaceChildren();
   if (!results.length) {
     els.explorerSearchResults.hidden = true;
@@ -1244,17 +1315,35 @@ function findNodeId(value) {
   return insensitive ? insensitive.id : null;
 }
 
-function routeStrength(edge) {
-  const value = edgeValue(edge) ?? edge.rawWeight ?? 0;
-  return Math.max(Number(value) || 0, 0.000001);
+function routeProbability(edge, mode) {
+  // Use the WIPER weight (normalized [0,1] probability) rather than the
+  // UFC `score`, which is an unbounded counts-like quantity. Top edges have
+  // score ≈ 1 and produce p=1.000, −log p=0.000 — not a probability.
+  let p;
+  if (mode === "raw") p = Number(edge.rawWeight);
+  else if (mode === "wiper1") p = edge.wiper1 && Number(edge.wiper1.weight);
+  else if (mode === "wiper2") p = edge.wiper2 && Number(edge.wiper2.weight);
+  else p = Number(edge.rawWeight);
+  if (!Number.isFinite(p) || p <= 0) return 1e-6;
+  return Math.min(0.999999, p);
 }
 
-function bestRoute(sourceId, targetId) {
+function routeEdgeCost(edge, mode) {
+  if (mode === "hops") return 1;
+  return -Math.log(routeProbability(edge, mode));
+}
+
+function routeStrength(edge) {
+  return routeProbability(edge, state.routeMode || "wiper2");
+}
+
+function bestRoute(sourceId, targetId, mode) {
   if (!state.data || sourceId === targetId) return null;
+  mode = mode || state.routeMode || "wiper2";
   const graph = new Map(state.data.nodes.map((node) => [node.id, []]));
   state.data.edges.forEach((edge) => {
     if (!graph.has(edge.source) || !graph.has(edge.target)) return;
-    const cost = 1 / routeStrength(edge);
+    const cost = routeEdgeCost(edge, mode);
     graph.get(edge.source).push({ node: edge.target, edge, cost });
     graph.get(edge.target).push({ node: edge.source, edge, cost });
   });
@@ -1297,16 +1386,60 @@ function bestRoute(sourceId, targetId) {
     current = step.node;
     nodes.unshift(current);
   }
-  const totalCost = edges.reduce((sum, edge) => sum + (1 / routeStrength(edge)), 0);
-  const averageStrength = edges.reduce((sum, edge) => sum + routeStrength(edge), 0) / Math.max(1, edges.length);
-  return { sourceId, targetId, nodes, edges, totalCost, averageStrength };
+  const totalCost = edges.reduce((sum, edge) => sum + routeEdgeCost(edge, mode), 0);
+  const totalProbability = edges.reduce((prod, edge) => prod * routeProbability(edge, mode), 1);
+  const averageStrength = edges.reduce((sum, edge) => sum + routeProbability(edge, mode), 0) / Math.max(1, edges.length);
+  return { sourceId, targetId, nodes, edges, totalCost, totalProbability, averageStrength, mode };
+}
+
+function routeModeLabel(mode) {
+  if (mode === "hops") return "fewest hops";
+  if (mode === "raw") return "raw weight";
+  if (mode === "wiper1") return "WIPER1";
+  return "WIPER2";
+}
+
+function renderRouteDirections(route) {
+  const panel = document.getElementById("routeDirections");
+  if (!panel) return;
+  if (!route) { panel.hidden = true; panel.innerHTML = ""; return; }
+  const mode = route.mode || "wiper2";
+  const totalCost = Number(route.totalCost) || 0;
+  const totalProb = Number(route.totalProbability) || 0;
+  const summaryRight = mode === "hops"
+    ? `${route.edges.length} hop${route.edges.length === 1 ? "" : "s"}`
+    : `\u03A3 \u2212log p ${fmt(totalCost)} \u00B7 \u220F p ${fmt(totalProb)}`;
+  const legs = route.edges.map((edge, i) => {
+    const from = route.nodes[i];
+    const to = route.nodes[i + 1];
+    const p = routeProbability(edge, mode);
+    const cost = routeEdgeCost(edge, mode);
+    return `<li class="routeLeg">
+      <span class="legIndex">${i + 1}</span>
+      <div class="legBody">
+        <div class="legPath"><strong>${escapeHtml(from)}</strong><span class="legArrow">\u2192</span><strong>${escapeHtml(to)}</strong></div>
+        <div class="legMeta">${mode === "hops" ? "1 hop" : `p ${fmt(p)} \u00B7 \u2212log p ${fmt(cost)}`}</div>
+      </div>
+    </li>`;
+  }).join("");
+  panel.innerHTML = `
+    <header class="routeDirectionsHead">
+      <div>
+        <div class="routeBadge">${escapeHtml(routeModeLabel(mode))}</div>
+        <div class="routeWaypoints"><strong>${escapeHtml(route.sourceId)}</strong><span class="legArrow">\u2192</span><strong>${escapeHtml(route.targetId)}</strong></div>
+      </div>
+      <div class="routeStat">${escapeHtml(summaryRight)}</div>
+    </header>
+    <ol class="routeLegs">${legs}</ol>`;
+  panel.hidden = false;
 }
 
 function routeSummary(route) {
+  const mode = route.mode || "wiper2";
   const legs = route.edges.map((edge, index) => {
     const from = route.nodes[index];
     const to = route.nodes[index + 1];
-    return `${from}-${to} ${metricLabel()} ${fmt(routeStrength(edge))}`;
+    return `${from}-${to} p ${fmt(routeProbability(edge, mode))}`;
   });
   return `Trip ${route.sourceId} to ${route.targetId}: ${route.nodes.join(" -> ")}. ${route.edges.length} leg${route.edges.length === 1 ? "" : "s"}; average ${metricLabel()} strength ${fmt(route.averageStrength)}. Legs: ${legs.join("; ")}.`;
 }
@@ -1319,11 +1452,16 @@ function centerRoute(route) {
   const maxX = Math.max(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
   const maxY = Math.max(...points.map((point) => point.y));
-  const spanX = Math.max(80, maxX - minX);
-  const spanY = Math.max(80, maxY - minY);
-  state.zoom = clamp(Math.min(3.2, 720 / spanX, 480 / spanY), 0.7, 3.2);
-  state.panX = 450 - ((minX + maxX) / 2) * state.zoom;
-  state.panY = 310 - ((minY + maxY) / 2) * state.zoom;
+  const spanX = Math.max(140, maxX - minX);
+  const spanY = Math.max(120, maxY - minY);
+  const padLeft = 380, padRight = 80, padTop = 90, padBottom = 90;
+  const availW = 900 - padLeft - padRight;
+  const availH = 620 - padTop - padBottom;
+  state.zoom = clamp(Math.min(availW / spanX, availH / spanY), 0.55, 2.6);
+  const targetX = padLeft + availW / 2;
+  const targetY = padTop + availH / 2;
+  state.panX = targetX - ((minX + maxX) / 2) * state.zoom;
+  state.panY = targetY - ((minY + maxY) / 2) * state.zoom;
 }
 
 function planTrip(sourceValue, targetValue) {
@@ -1358,10 +1496,11 @@ function planTrip(sourceValue, targetValue) {
   if (els.routeTarget) els.routeTarget.value = targetId;
   state.selectedKind = "edge";
   state.selected = route.edges[0].id;
-  state.detailsHidden = false;
+  state.detailsHidden = true;
   render();
   centerRoute(route);
   drawNetwork();
+  renderRouteDirections(route);
   addChatMessage("agent", routeSummary(route));
   return true;
 }
@@ -1385,7 +1524,7 @@ function render() {
   const s = state.data.summary;
   const nodeIds = activeNodeIds();
   const edgeIds = activeEdgeIds(nodeIds);
-  els.summary.textContent = `${nodeIds.size}/${s.nodeCount} nodes, ${edgeIds.size}/${s.inputEdgeCount} edges shown, ${s.iterations} iterations`;
+  els.summary.textContent = `${nodeIds.size}/${s.nodeCount} nodes, ${edgeIds.size}/${s.inputEdgeCount} edges shown`;
   if (els.viewSummary) {
     const routeText = state.plannedRoute ? `, trip ${state.plannedRoute.sourceId} to ${state.plannedRoute.targetId}` : "";
     els.viewSummary.textContent = `${state.layoutMode.toUpperCase()} layout, ${metricLabel()} ${state.metric === "raw" ? "raw" : state.edgeMeasure.toUpperCase()} view, ${state.edgeScale} edge scale${routeText}`;
@@ -1423,8 +1562,11 @@ async function analyze() {
   state.positions = new Map();
   state.layoutSignature = "";
   state.plannedRoute = null;
-  state.selected = result.edges[0] && result.edges[0].id;
-  state.selectedKind = "edge";
+  // Start with no selection — selection details / show-details bar stay hidden
+  // until the user actively clicks a node, edge, or search result.
+  state.selected = null;
+  state.selectedKind = null;
+  state.detailsHidden = true;
   render();
 }
 
@@ -1744,9 +1886,6 @@ function setupResizablePanels() {
   setupDrag(els.agentResize, (dx) => {
     setCssPxVar("--agent-width", clamp(agentStart - dx, 220, 560));
   });
-  els.agentResize && els.agentResize.addEventListener("pointerdown", () => {
-    agentStart = els.agentPanel.getBoundingClientRect().width;
-  });
 
   setupDrag(els.resultsResize, (_dx, dy) => {
     const maxHeight = Math.max(180, window.innerHeight - 240);
@@ -1886,6 +2025,19 @@ bindSegments("layoutModeSegments", "layoutMode", "data-layout");
 bindSegments("generatorModelSegments", "generatorModel", "data-generator");
 bindSegments("edgeFilterSegments", "edgeFilter", "data-mode");
 bindSegments("nodeFilterSegments", "nodeFilter", "data-mode");
+function syncFilterRows() {
+  document.querySelectorAll('[data-filter-row]').forEach((row) => {
+    const which = row.getAttribute('data-filter-row');
+    const mode = which === 'edge' ? state.edgeFilter : state.nodeFilter;
+    row.querySelectorAll('[data-filter-input]').forEach((label) => {
+      label.hidden = label.getAttribute('data-filter-input') !== mode;
+    });
+    row.hidden = mode === 'all';
+  });
+}
+syncFilterRows();
+document.getElementById('edgeFilterSegments').addEventListener('click', syncFilterRows);
+document.getElementById('nodeFilterSegments').addEventListener('click', syncFilterRows);
 setupResizablePanels();
 setupNetworkZoom();
 
@@ -1901,7 +2053,13 @@ els.account.addEventListener("click", () => {
 });
 els.navItems.forEach((item) => {
   item.addEventListener("click", () => {
-    setSidePanel(item.getAttribute("data-nav-panel"));
+    const target = item.getAttribute("data-nav-panel");
+    if (!target) return; // navAction items handle their own click below
+    if (target === "assistant") {
+      openAssistant();
+      return;
+    }
+    setSidePanel(target);
     if (state.sidebarCollapsed) {
       setSidebarCollapsed(false);
     }
@@ -1912,7 +2070,19 @@ els.generateGeneterrain.addEventListener("click", makeGeneterrain);
 els.resultEdges.addEventListener("click", () => setResultTab("edges", { focus: true }));
 els.resultNodes.addEventListener("click", () => setResultTab("nodes", { focus: true }));
 els.outputGeneterrain.addEventListener("click", outputGeneterrainNetwork);
-els.zoomReset.addEventListener("click", resetZoom);
+const tidyLayoutBtn = document.getElementById("tidyLayoutBtn");
+if (tidyLayoutBtn) {
+  tidyLayoutBtn.addEventListener("click", () => {
+    state.positions = new Map();
+    state.layoutSignature = "";
+    tidyLayoutBtn.classList.add("isWorking");
+    requestAnimationFrame(() => {
+      render();
+      resetZoom();
+      setTimeout(() => tidyLayoutBtn.classList.remove("isWorking"), 200);
+    });
+  });
+}
 els.zoomIn.addEventListener("click", () => zoomBy(1.22));
 els.zoomOut.addEventListener("click", () => zoomBy(0.82));
 els.explorerFullscreenBtn.addEventListener("click", () => {
@@ -1946,6 +2116,14 @@ els.filter.addEventListener("input", () => {
   renderNodesTable();
 });
 els.explorerSearch.addEventListener("input", renderSearchResults);
+els.explorerSearch.addEventListener("focus", renderSearchResults);
+els.explorerSearch.addEventListener("blur", () => {
+  // Delay so a click on a result item still registers
+  setTimeout(() => {
+    if (els.explorerSearchResults) els.explorerSearchResults.hidden = true;
+    if (state.searchMatches) { state.searchMatches = null; drawNetwork(); }
+  }, 120);
+});
 els.explorerSearch.addEventListener("keydown", (event) => {
   if (event.key !== "Enter") return;
   const first = searchItems(els.explorerSearch.value)[0];
@@ -1959,15 +2137,21 @@ els.chatInput.addEventListener("keydown", (event) => {
     applyChatInstruction();
   }
 });
-els.planTrip.addEventListener("click", () => {
-  planTrip(els.routeSource.value, els.routeTarget.value);
-});
 [els.routeSource, els.routeTarget].forEach((input) => {
+  let _t = 0;
+  const sched = () => {
+    clearTimeout(_t);
+    _t = setTimeout(() => {
+      const a = (els.routeSource.value || "").trim();
+      const b = (els.routeTarget.value || "").trim();
+      if (a && b && a !== b) planTrip(a, b);
+    }, 180);
+  };
   input.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      planTrip(els.routeSource.value, els.routeTarget.value);
-    }
+    if (event.key === "Enter") planTrip(els.routeSource.value, els.routeTarget.value);
   });
+  input.addEventListener("change", sched);
+  input.addEventListener("input", sched);
 });
 els.exportEdges.addEventListener("click", exportEdges);
 els.exportNodes.addEventListener("click", exportNodes);
@@ -2004,12 +2188,91 @@ try {
   setTheme("light");
 }
 setSidePanel("input");
-if (isNarrowViewport()) setSidebarCollapsed(true);
+setSidebarCollapsed(true);
 window.addEventListener("resize", () => {
   if (isNarrowViewport() && !state.sidebarCollapsed) {
     setSidebarCollapsed(true);
   }
 });
-els.edgeText.value = sampleNetwork;
+makeRandom();
 addChatMessage("agent", "Tell me how to shape the network: choose WIPER1 or WIPER2, show top N edges, plan a trip from A to F, generate a scale-free graph, run Geneterrain, or analyze the current input.");
-analyze();
+
+// ===================== ASSISTANT DRAWER =====================
+function openAssistant() {
+  document.body.classList.add('assistantOpen');
+  const drawer = document.getElementById('assistantDrawer');
+  const scrim = document.getElementById('assistantScrim');
+  const fab = document.getElementById('assistantFab');
+  if (drawer) drawer.setAttribute('aria-hidden', 'false');
+  if (scrim) scrim.hidden = false;
+  if (fab) fab.setAttribute('aria-expanded', 'true');
+  setTimeout(() => { const i = document.getElementById('chatInput'); if (i) i.focus(); }, 220);
+}
+function closeAssistant() {
+  document.body.classList.remove('assistantOpen');
+  const drawer = document.getElementById('assistantDrawer');
+  const scrim = document.getElementById('assistantScrim');
+  const fab = document.getElementById('assistantFab');
+  if (drawer) drawer.setAttribute('aria-hidden', 'true');
+  if (scrim) setTimeout(() => { scrim.hidden = true; }, 200);
+  if (fab) fab.setAttribute('aria-expanded', 'false');
+}
+(function wireAssistantDrawer() {
+  const fab = document.getElementById('assistantFab');
+  const closeBtn = document.getElementById('assistantCloseBtn');
+  const scrim = document.getElementById('assistantScrim');
+  if (fab) fab.addEventListener('click', openAssistant);
+  if (closeBtn) closeBtn.addEventListener('click', closeAssistant);
+  if (scrim) scrim.addEventListener('click', closeAssistant);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && document.body.classList.contains('assistantOpen')) closeAssistant();
+  });
+})();
+
+// ===================== DIRECTIONS CARD =====================
+(function wireDirectionsCard() {
+  const card = document.getElementById('directionsCard');
+  const openBtn = document.getElementById('directionsCardOpenBtn');
+  const body = document.getElementById('directionsCardBody');
+  if (!card || !openBtn || !body) return;
+  function setOpen(open) {
+    card.setAttribute('data-state', open ? 'open' : 'closed');
+    openBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    body.hidden = !open;
+    if (open) setTimeout(() => { const i = document.getElementById('routeSourceInput'); if (i) i.focus(); }, 50);
+  }
+  openBtn.addEventListener('click', () => setOpen(true));
+  // Delegated close handler — robust against stacking / late mounts
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest && e.target.closest('#directionsCardCloseBtn');
+    if (t) { e.preventDefault(); e.stopPropagation(); setOpen(false); }
+  });
+})();
+
+// Mode tabs + swap wiring
+(function wireRouteControls(){
+  const seg = document.getElementById('routeModeSegments');
+  if (seg) {
+    seg.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-route-mode]');
+      if (!btn) return;
+      const mode = btn.getAttribute('data-route-mode');
+      state.routeMode = mode;
+      seg.querySelectorAll('button[data-route-mode]').forEach(b => b.classList.toggle('active', b === btn));
+      const a = (els.routeSource.value || '').trim();
+      const b = (els.routeTarget.value || '').trim();
+      if (a && b && a !== b) planTrip(a, b);
+    });
+  }
+  const swap = document.getElementById('routeSwapBtn');
+  if (swap) {
+    swap.addEventListener('click', () => {
+      const a = els.routeSource.value;
+      els.routeSource.value = els.routeTarget.value;
+      els.routeTarget.value = a;
+      const s = (els.routeSource.value || '').trim();
+      const t = (els.routeTarget.value || '').trim();
+      if (s && t && s !== t) planTrip(s, t);
+    });
+  }
+})();
