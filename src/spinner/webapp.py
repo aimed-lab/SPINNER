@@ -276,6 +276,10 @@ class WiperWebHandler(BaseHTTPRequestHandler):
 
 
 def main(argv: list[str] | None = None) -> int:
+    import sys, threading
+    sys.setrecursionlimit(60000)          # WIPER path recursion on mid-size graphs
+    try: threading.stack_size(256*1024*1024)  # avoid C-stack segfault on deep recursion
+    except (ValueError, RuntimeError): pass
     parser = argparse.ArgumentParser(description="Run the local SPINNER web explorer")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host")
     parser.add_argument("--port", type=int, default=8765, help="Bind port")

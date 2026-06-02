@@ -2194,7 +2194,31 @@ window.addEventListener("resize", () => {
     setSidebarCollapsed(true);
   }
 });
-makeRandom();
+// Deep-link data loading: ?edges=<url> fetches a tab-separated edge list (node1 node2 weight),
+// loads it into the input, and analyzes it. Optional: ?title=, ?iterations=, ?novel=1.
+// Falls back to the sample network if no param or the fetch fails.
+(function initFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const edgesUrl = params.get("edges");
+  if (params.get("iterations")) els.iterations.value = params.get("iterations");
+  if (params.get("novel") === "1") els.includeNovel.checked = true;
+  if (params.get("title")) { try { document.title = params.get("title") + " · SPINNER"; } catch (_e) {} }
+  if (!edgesUrl) { makeRandom(); return; }
+  els.summary.textContent = "Loading edges from " + edgesUrl + " …";
+  fetch(edgesUrl)
+    .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+    .then((txt) => {
+      const body = txt.trim();
+      if (!body) throw new Error("empty edge list");
+      els.edgeText.value = body;
+      setSidePanel("input");
+      analyze();
+    })
+    .catch((err) => {
+      makeRandom();
+      addChatMessage("agent", "Could not load edges from the URL (" + err.message + "); showing the sample network instead. You can paste an edge list into the Input panel.");
+    });
+})();
 addChatMessage("agent", "Tell me how to shape the network: choose WIPER1 or WIPER2, show top N edges, plan a trip from A to F, generate a scale-free graph, run Geneterrain, or analyze the current input.");
 
 // ===================== ASSISTANT DRAWER =====================
