@@ -160,17 +160,46 @@ def analyze_edges_text(
     iterations: int = 80,
     include_novel: bool = False,
     device: str = "cpu",
+    max_paths_per_pair: int = 1024,
 ) -> dict[str, Any]:
-    """Score a pasted edge list with WIPER1 and WIPER2."""
+    """Score a pasted edge list with WIPER1 and WIPER2.
+
+    Dense or heavily tied-weight graphs can blow WIPER2's path enumeration
+    cap (it raises ``RuntimeError("too many tied shortest paths")``). When
+    that happens we still return a usable response — raw edges + WIPER1 +
+    WINNER node scores — with ``summary.warnings`` describing what was
+    skipped so the frontend can surface it.
+    """
     edge_df = read_interactions_text(text)
     if edge_df.empty:
         raise ValueError("No valid non-self edges were found.")
 
+    warnings: list[str] = []
+
     wiper1 = run_wiper1(edge_df, iterations=iterations, include_novel=include_novel, device=device)
-    wiper2 = run_wiper2(edge_df, iterations=iterations, device=device)
     map1 = _result_map(wiper1)
-    map2 = _result_map(wiper2)
-    path_debug = _pathflow_debug(edge_df)
+
+    map2: dict[str, dict[str, Any]] = {}
+    path_debug: dict[str, dict[str, Any]] = {}
+    try:
+        wiper2 = run_wiper2(
+            edge_df,
+            iterations=iterations,
+            device=device,
+            max_paths_per_pair=max_paths_per_pair,
+        )
+        map2 = _result_map(wiper2)
+    except RuntimeError as exc:
+        warnings.append(
+            f"WIPER2 skipped — {exc}. Raw + WIPER1 + WINNER results are still shown. "
+            "Try a sparser subnetwork or break tied edge weights."
+        )
+
+    if map2:
+        try:
+            path_debug = _pathflow_debug(edge_df)
+        except RuntimeError as exc:
+            warnings.append(f"Path-load detail skipped — {exc}.")
 
     node_scores = _winner_node_scores(edge_df, iterations=iterations)
     raw_rank = edge_df["weight"].rank(method="min", ascending=False).astype(int).to_numpy()
@@ -206,16 +235,20 @@ def analyze_edges_text(
             }
         )
 
+    summary: dict[str, Any] = {
+        "nodeCount": len(nodes),
+        "inputEdgeCount": len(edge_df),
+        "edgeCount": len(edges),
+        "iterations": iterations,
+        "includeNovel": include_novel,
+        "wiper2Available": bool(map2),
+    }
+    if warnings:
+        summary["warnings"] = warnings
     return {
         "nodes": sorted(node_scores, key=lambda item: item["id"]),
         "edges": edges,
-        "summary": {
-            "nodeCount": len(nodes),
-            "inputEdgeCount": len(edge_df),
-            "edgeCount": len(edges),
-            "iterations": iterations,
-            "includeNovel": include_novel,
-        },
+        "summary": summary,
     }
 
 
@@ -268,6 +301,7 @@ class WiperWebHandler(BaseHTTPRequestHandler):
                 iterations=int(payload.get("iterations", 80)),
                 include_novel=bool(payload.get("includeNovel", False)),
                 device=str(payload.get("device", "cpu")),
+                max_paths_per_pair=int(payload.get("maxPathsPerPair", 1024)),
             )
         except Exception as exc:  # pragma: no cover - exercised by browser
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
