@@ -2208,22 +2208,27 @@ window.addEventListener("resize", () => {
   }
 });
 // ===================== DEEP-LINK LOADER =====================
-// Upstream tools can hand SPINNER an edge list at boot via either:
+// Upstream tools can hand SPINNER an edge list at boot via any of:
 //
-//   1. URL hash params
+//   1. URL hash params (data embedded in the link — no hosting needed)
 //        #data=<base64(JSON({text, iterations, includeNovel,
 //                           projectName, projectFolder, maxPathsPerPair}))>
 //        #edges=<base64(TSV-text)>
 //        #text=<URI-encoded TSV-text>
 //
-//   2. postMessage from a parent frame
+//   2. Query string (data fetched from a URL — good for large datasets)
+//        ?edges=<url>     fetches a tab-separated edge list and analyzes it
+//      Plus optional query options, also honored alongside the hash/fetch
+//      payloads: ?iterations=<n>, ?novel=1, ?title=<label>.
+//
+//   3. postMessage from a parent frame
 //        parent.postMessage({type: 'spinner:load', text, iterations, ...}, '*')
 //      SPINNER replies with {type: 'spinner:loaded', ok: <bool>}.
 //
-// Both paths populate the Build panel and trigger analyze() so the network
-// renders against whatever the upstream tool prepared. If no payload is
-// present or decoding fails, SPINNER falls back to the random scale-free
-// demo network it used to boot with.
+// Precedence at boot: an embedded hash payload wins (the link is
+// self-contained); otherwise ?edges=<url> is fetched; otherwise SPINNER
+// falls back to the random scale-free demo network it used to boot with.
+// All paths populate the Build panel and trigger analyze().
 function _b64decodeUtf8(s) {
   // tolerate URL-safe base64 and missing padding
   s = String(s).replace(/-/g, "+").replace(/_/g, "/");
@@ -2280,6 +2285,19 @@ function applyDeepLinkPayload(payload) {
   return true;
 }
 
+// Query-string options: ?edges=<url> plus ?iterations=, ?novel=1, ?title=.
+function readQueryOptions() {
+  const q = new URLSearchParams(location.search);
+  const opts = {};
+  if (q.has("iterations") && Number.isFinite(Number(q.get("iterations")))) {
+    opts.iterations = Number(q.get("iterations"));
+  }
+  if (q.get("novel") === "1") opts.includeNovel = true;
+  if (q.has("title")) opts.title = q.get("title");
+  if (q.has("edges")) opts.edgesUrl = q.get("edges");
+  return opts;
+}
+
 window.addEventListener("message", (event) => {
   const msg = event && event.data;
   if (!msg || typeof msg !== "object" || msg.type !== "spinner:load") return;
@@ -2291,9 +2309,47 @@ window.addEventListener("message", (event) => {
   } catch (_err) { /* ignore reply failures */ }
 });
 
-if (!applyDeepLinkPayload(readDeepLinkFromHash())) {
+function bootDeepLink() {
+  const opts = readQueryOptions();
+  if (opts.title) {
+    try { document.title = opts.title + " · SPINNER"; } catch (_e) { /* ignore */ }
+  }
+  // 1. Embedded hash payload wins — the link carries its own data.
+  const hashPayload = readDeepLinkFromHash();
+  if (hashPayload) {
+    if (hashPayload.iterations == null && opts.iterations != null) hashPayload.iterations = opts.iterations;
+    if (hashPayload.includeNovel == null && opts.includeNovel != null) hashPayload.includeNovel = opts.includeNovel;
+    if (applyDeepLinkPayload(hashPayload)) return;
+  }
+  // 2. ?edges=<url> — fetch a tab-separated edge list cross-origin.
+  if (opts.edgesUrl) {
+    if (els.summary) els.summary.textContent = "Loading edges from " + opts.edgesUrl + " …";
+    fetch(opts.edgesUrl)
+      .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then((txt) => {
+        const body = txt.trim();
+        if (!body) throw new Error("empty edge list");
+        const ok = applyDeepLinkPayload({
+          text: body,
+          iterations: opts.iterations,
+          includeNovel: opts.includeNovel,
+        });
+        if (!ok) throw new Error("no valid edges in response");
+      })
+      .catch((err) => {
+        makeRandom();
+        addChatMessage(
+          "agent",
+          "Could not load edges from the URL (" + err.message + "); showing the sample network instead. You can paste an edge list into the Build panel."
+        );
+      });
+    return; // async path owns the boot
+  }
+  // 3. Nothing embedded or fetched — fall back to the demo network.
   makeRandom();
 }
+
+bootDeepLink();
 addChatMessage("agent", "Tell me how to shape the network: choose WIPER1 or WIPER2, show top N edges, plan a trip from A to F, generate a scale-free graph, run Geneterrain, or analyze the current input.");
 
 // ===================== ASSISTANT DRAWER =====================

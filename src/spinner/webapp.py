@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
+import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -309,7 +311,24 @@ class WiperWebHandler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.OK, result)
 
 
+def _raise_recursion_headroom() -> None:
+    """Give WIPER path enumeration more room before the per-pair cap kicks in.
+
+    WIPER2 path recursion can run deep on mid-size graphs. Raise the Python
+    recursion limit and, where the platform allows, enlarge the C stack of
+    the request-handler threads so deep-but-bounded recursion completes
+    instead of segfaulting. The ``max_paths_per_pair`` cap in
+    ``analyze_edges_text`` still backstops pathological tied-weight graphs.
+    """
+    sys.setrecursionlimit(60000)
+    try:
+        threading.stack_size(256 * 1024 * 1024)
+    except (ValueError, RuntimeError):
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _raise_recursion_headroom()
     parser = argparse.ArgumentParser(description="Run the local SPINNER web explorer")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host")
     parser.add_argument("--port", type=int, default=8765, help="Bind port")
