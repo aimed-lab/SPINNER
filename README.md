@@ -52,7 +52,7 @@ force-directed and organic alternatives in the browser.
 ### Reliability
 - Client-side `/api/analyze` fallback synthesizes plausible WIPER1 / WIPER2 / path-load values when the Python backend is unreachable, so static previews still render a network.
 
-See [`CHANGELOG.md`](CHANGELOG.md) for the full 1.100 release notes.
+See [`CHANGELOG.md`](CHANGELOG.md) for the full release notes (current: 1.110).
 
 ## How SPINNER Uses WINNER and WIPER
 
@@ -120,6 +120,77 @@ node1 node2 weight
 A     B     0.92
 B     C     0.88
 ```
+
+## Integrating SPINNER into another application
+
+A third-party tool can hand SPINNER a network and let users explore it, or
+score a network headlessly. There are two integration surfaces. See
+[`docs/INTEGRATION.md`](docs/INTEGRATION.md) for the full reference, copy-paste
+snippets, and the complete response schema.
+
+### 1. Deep-link the explorer (visual handoff)
+
+Open SPINNER's URL with the data attached and it loads + analyzes on boot,
+falling back to the demo network if nothing is supplied. Precedence: an
+embedded hash payload wins, then `?edges=<url>`, then the demo.
+
+| Transport | When to use | Example |
+| --- | --- | --- |
+| `?edges=<url>` | Data is hosted somewhere SPINNER can fetch (CORS-enabled) | `…/?edges=https://host/net.tsv` |
+| `#edges=<base64 TSV>` | Self-contained link, no hosting | `…/#edges=QQlCCTAuOQo…` |
+| `#text=<URI-encoded TSV>` | Small inline graphs | `…/#text=A%09B%090.9%0A…` |
+| `#data=<base64 JSON>` | Inline graph **plus** parameters | `…/#data=eyJ0ZXh0Ijoi…` |
+
+Optional query parameters work alongside any transport: `?title=<label>`
+(sets the tab title), `?iterations=<n>`, `?novel=1` (include WIPER1 novel
+edges). A failed `?edges=` fetch falls back to the demo with a chat notice.
+
+The `#data=` JSON payload accepts: `text` (required, the edge list),
+`iterations`, `includeNovel`, `device`, `projectName`, `projectFolder`.
+
+```js
+// Build a self-contained deep-link from an in-memory edge list
+const tsv = "A\tB\t0.92\nB\tC\t0.88";
+const b64 = btoa(unescape(encodeURIComponent(tsv)));   // UTF-8 safe
+const url = `http://127.0.0.1:8765/#edges=${b64}&` +
+            new URLSearchParams({ title: "My study", iterations: "80" });
+window.open(url, "_blank");
+```
+
+### Embed in an iframe and push data with `postMessage`
+
+```js
+const frame = document.getElementById("spinner");          // <iframe src="http://127.0.0.1:8765">
+frame.contentWindow.postMessage({
+  type: "spinner:load",
+  text: "A\tB\t0.92\nB\tC\t0.88",
+  iterations: 80,
+  includeNovel: false,
+}, "*");
+window.addEventListener("message", (e) => {
+  if (e.data?.type === "spinner:loaded") console.log("loaded:", e.data.ok);
+});
+```
+
+### 2. Call the scoring API (headless)
+
+`POST /api/analyze` runs WIPER1, WIPER2, and WINNER and returns JSON — no UI.
+All responses send `Access-Control-Allow-Origin: *`, so browser clients can
+call it cross-origin.
+
+```bash
+curl -s http://127.0.0.1:8765/api/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"A\tB\t0.92\nB\tC\t0.88","iterations":80}'
+```
+
+Request body: `text` (required), `iterations` (default 80), `includeNovel`
+(default false), `device` (default `"cpu"`), `maxPathsPerPair` (default 1024).
+The response has `nodes`, `edges`, and a `summary` carrying
+`wiper1Available` / `wiper2Available` / `winnerAvailable` flags and, on dense
+graphs where an engine is skipped, a `summary.warnings` array — the request
+still returns `200` with raw edges plus whatever scored. Full schema in
+[`docs/INTEGRATION.md`](docs/INTEGRATION.md).
 
 ## License
 
