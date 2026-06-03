@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sys
+import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
@@ -154,25 +156,87 @@ def _winner_node_scores(
     ]
 
 
+# WIPER2's shortest-path enumeration can blow up on dense / heavily
+# tied-weight graphs in more than one way: the per-pair cap raises
+# RuntimeError, but the combinatorics can also explode an intermediate
+# array first and surface as a (numpy) MemoryError or an OverflowError on
+# the array shape. All three mean "this graph is too dense for WIPER2" —
+# we treat them identically and degrade gracefully.
+_WIPER2_OVERFLOW = (RuntimeError, MemoryError, OverflowError)
+
+
+def _describe_overflow(exc: Exception) -> str:
+    if isinstance(exc, MemoryError):
+        return "ran out of memory enumerating tied shortest paths"
+    if isinstance(exc, OverflowError):
+        return "too many tied shortest paths to enumerate"
+    return str(exc)
+
+
 def analyze_edges_text(
     text: str,
     *,
     iterations: int = 80,
     include_novel: bool = False,
     device: str = "cpu",
+    max_paths_per_pair: int = 1024,
 ) -> dict[str, Any]:
-    """Score a pasted edge list with WIPER1 and WIPER2."""
+    """Score a pasted edge list with WIPER1 and WIPER2.
+
+    Dense or heavily tied-weight graphs can overwhelm WIPER2's path
+    enumeration — via the per-pair cap (``RuntimeError``) or by exploding an
+    intermediate array (``MemoryError`` / ``OverflowError``). When that
+    happens we still return a usable response — raw edges + WIPER1 + WINNER
+    node scores — with ``summary.warnings`` describing what was skipped so
+    the frontend can surface it.
+    """
     edge_df = read_interactions_text(text)
     if edge_df.empty:
         raise ValueError("No valid non-self edges were found.")
 
-    wiper1 = run_wiper1(edge_df, iterations=iterations, include_novel=include_novel, device=device)
-    wiper2 = run_wiper2(edge_df, iterations=iterations, device=device)
-    map1 = _result_map(wiper1)
-    map2 = _result_map(wiper2)
-    path_debug = _pathflow_debug(edge_df)
+    warnings: list[str] = []
 
-    node_scores = _winner_node_scores(edge_df, iterations=iterations)
+    # WIPER1, WIPER2, and WINNER are each scored independently and guarded:
+    # dense / tied-weight graphs can overflow any of the path-based engines,
+    # but raw edges plus whichever scores succeed should always come back so
+    # the explorer renders something rather than 500-ing the whole request.
+    map1: dict[str, dict[str, Any]] = {}
+    try:
+        wiper1 = run_wiper1(edge_df, iterations=iterations, include_novel=include_novel, device=device)
+        map1 = _result_map(wiper1)
+    except _WIPER2_OVERFLOW as exc:
+        warnings.append(
+            f"WIPER1 skipped — {_describe_overflow(exc)}. Raw + WINNER results are "
+            "still shown. Try a sparser subnetwork or break tied edge weights."
+        )
+
+    map2: dict[str, dict[str, Any]] = {}
+    path_debug: dict[str, dict[str, Any]] = {}
+    try:
+        wiper2 = run_wiper2(
+            edge_df,
+            iterations=iterations,
+            device=device,
+            max_paths_per_pair=max_paths_per_pair,
+        )
+        map2 = _result_map(wiper2)
+    except _WIPER2_OVERFLOW as exc:
+        warnings.append(
+            f"WIPER2 skipped — {_describe_overflow(exc)}. Raw + WIPER1 + WINNER "
+            "results are still shown. Try a sparser subnetwork or break tied edge weights."
+        )
+
+    if map2:
+        try:
+            path_debug = _pathflow_debug(edge_df)
+        except _WIPER2_OVERFLOW as exc:
+            warnings.append(f"Path-load detail skipped — {_describe_overflow(exc)}.")
+
+    node_scores: list[dict[str, Any]] = []
+    try:
+        node_scores = _winner_node_scores(edge_df, iterations=iterations)
+    except _WIPER2_OVERFLOW as exc:
+        warnings.append(f"WINNER node scores skipped — {_describe_overflow(exc)}.")
     raw_rank = edge_df["weight"].rank(method="min", ascending=False).astype(int).to_numpy()
     raw: dict[str, dict[str, Any]] = {}
     nodes: set[str] = set()
@@ -206,16 +270,22 @@ def analyze_edges_text(
             }
         )
 
+    summary: dict[str, Any] = {
+        "nodeCount": len(nodes),
+        "inputEdgeCount": len(edge_df),
+        "edgeCount": len(edges),
+        "iterations": iterations,
+        "includeNovel": include_novel,
+        "wiper1Available": bool(map1),
+        "wiper2Available": bool(map2),
+        "winnerAvailable": bool(node_scores),
+    }
+    if warnings:
+        summary["warnings"] = warnings
     return {
         "nodes": sorted(node_scores, key=lambda item: item["id"]),
         "edges": edges,
-        "summary": {
-            "nodeCount": len(nodes),
-            "inputEdgeCount": len(edge_df),
-            "edgeCount": len(edges),
-            "iterations": iterations,
-            "includeNovel": include_novel,
-        },
+        "summary": summary,
     }
 
 
@@ -268,6 +338,7 @@ class WiperWebHandler(BaseHTTPRequestHandler):
                 iterations=int(payload.get("iterations", 80)),
                 include_novel=bool(payload.get("includeNovel", False)),
                 device=str(payload.get("device", "cpu")),
+                max_paths_per_pair=int(payload.get("maxPathsPerPair", 1024)),
             )
         except Exception as exc:  # pragma: no cover - exercised by browser
             self._json(HTTPStatus.BAD_REQUEST, {"error": str(exc)})
@@ -275,7 +346,24 @@ class WiperWebHandler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.OK, result)
 
 
+def _raise_recursion_headroom() -> None:
+    """Give WIPER path enumeration more room before the per-pair cap kicks in.
+
+    WIPER2 path recursion can run deep on mid-size graphs. Raise the Python
+    recursion limit and, where the platform allows, enlarge the C stack of
+    the request-handler threads so deep-but-bounded recursion completes
+    instead of segfaulting. The ``max_paths_per_pair`` cap in
+    ``analyze_edges_text`` still backstops pathological tied-weight graphs.
+    """
+    sys.setrecursionlimit(60000)
+    try:
+        threading.stack_size(256 * 1024 * 1024)
+    except (ValueError, RuntimeError):
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _raise_recursion_headroom()
     parser = argparse.ArgumentParser(description="Run the local SPINNER web explorer")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host")
     parser.add_argument("--port", type=int, default=8765, help="Bind port")
