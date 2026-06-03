@@ -156,6 +156,23 @@ def _winner_node_scores(
     ]
 
 
+# WIPER2's shortest-path enumeration can blow up on dense / heavily
+# tied-weight graphs in more than one way: the per-pair cap raises
+# RuntimeError, but the combinatorics can also explode an intermediate
+# array first and surface as a (numpy) MemoryError or an OverflowError on
+# the array shape. All three mean "this graph is too dense for WIPER2" —
+# we treat them identically and degrade gracefully.
+_WIPER2_OVERFLOW = (RuntimeError, MemoryError, OverflowError)
+
+
+def _describe_overflow(exc: Exception) -> str:
+    if isinstance(exc, MemoryError):
+        return "ran out of memory enumerating tied shortest paths"
+    if isinstance(exc, OverflowError):
+        return "too many tied shortest paths to enumerate"
+    return str(exc)
+
+
 def analyze_edges_text(
     text: str,
     *,
@@ -166,11 +183,12 @@ def analyze_edges_text(
 ) -> dict[str, Any]:
     """Score a pasted edge list with WIPER1 and WIPER2.
 
-    Dense or heavily tied-weight graphs can blow WIPER2's path enumeration
-    cap (it raises ``RuntimeError("too many tied shortest paths")``). When
-    that happens we still return a usable response — raw edges + WIPER1 +
-    WINNER node scores — with ``summary.warnings`` describing what was
-    skipped so the frontend can surface it.
+    Dense or heavily tied-weight graphs can overwhelm WIPER2's path
+    enumeration — via the per-pair cap (``RuntimeError``) or by exploding an
+    intermediate array (``MemoryError`` / ``OverflowError``). When that
+    happens we still return a usable response — raw edges + WIPER1 + WINNER
+    node scores — with ``summary.warnings`` describing what was skipped so
+    the frontend can surface it.
     """
     edge_df = read_interactions_text(text)
     if edge_df.empty:
@@ -178,8 +196,19 @@ def analyze_edges_text(
 
     warnings: list[str] = []
 
-    wiper1 = run_wiper1(edge_df, iterations=iterations, include_novel=include_novel, device=device)
-    map1 = _result_map(wiper1)
+    # WIPER1, WIPER2, and WINNER are each scored independently and guarded:
+    # dense / tied-weight graphs can overflow any of the path-based engines,
+    # but raw edges plus whichever scores succeed should always come back so
+    # the explorer renders something rather than 500-ing the whole request.
+    map1: dict[str, dict[str, Any]] = {}
+    try:
+        wiper1 = run_wiper1(edge_df, iterations=iterations, include_novel=include_novel, device=device)
+        map1 = _result_map(wiper1)
+    except _WIPER2_OVERFLOW as exc:
+        warnings.append(
+            f"WIPER1 skipped — {_describe_overflow(exc)}. Raw + WINNER results are "
+            "still shown. Try a sparser subnetwork or break tied edge weights."
+        )
 
     map2: dict[str, dict[str, Any]] = {}
     path_debug: dict[str, dict[str, Any]] = {}
@@ -191,19 +220,23 @@ def analyze_edges_text(
             max_paths_per_pair=max_paths_per_pair,
         )
         map2 = _result_map(wiper2)
-    except RuntimeError as exc:
+    except _WIPER2_OVERFLOW as exc:
         warnings.append(
-            f"WIPER2 skipped — {exc}. Raw + WIPER1 + WINNER results are still shown. "
-            "Try a sparser subnetwork or break tied edge weights."
+            f"WIPER2 skipped — {_describe_overflow(exc)}. Raw + WIPER1 + WINNER "
+            "results are still shown. Try a sparser subnetwork or break tied edge weights."
         )
 
     if map2:
         try:
             path_debug = _pathflow_debug(edge_df)
-        except RuntimeError as exc:
-            warnings.append(f"Path-load detail skipped — {exc}.")
+        except _WIPER2_OVERFLOW as exc:
+            warnings.append(f"Path-load detail skipped — {_describe_overflow(exc)}.")
 
-    node_scores = _winner_node_scores(edge_df, iterations=iterations)
+    node_scores: list[dict[str, Any]] = []
+    try:
+        node_scores = _winner_node_scores(edge_df, iterations=iterations)
+    except _WIPER2_OVERFLOW as exc:
+        warnings.append(f"WINNER node scores skipped — {_describe_overflow(exc)}.")
     raw_rank = edge_df["weight"].rank(method="min", ascending=False).astype(int).to_numpy()
     raw: dict[str, dict[str, Any]] = {}
     nodes: set[str] = set()
@@ -243,7 +276,9 @@ def analyze_edges_text(
         "edgeCount": len(edges),
         "iterations": iterations,
         "includeNovel": include_novel,
+        "wiper1Available": bool(map1),
         "wiper2Available": bool(map2),
+        "winnerAvailable": bool(node_scores),
     }
     if warnings:
         summary["warnings"] = warnings

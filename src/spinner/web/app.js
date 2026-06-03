@@ -304,14 +304,18 @@ function edgeScoreObject(edge, metric = state.metric) {
 function edgeValue(edge, metric = state.metric) {
   if (metric === "raw") return edge.rawWeight;
   const scores = edgeScoreObject(edge, metric);
-  if (!scores) return null;
-  return state.edgeMeasure === "weight" ? scores.weight : scores.score;
+  // When the selected WIPER metric is unavailable (e.g. the backend skipped
+  // WIPER1/WIPER2 on a dense graph), fall back to raw weight so edges still
+  // render and filter instead of vanishing from the canvas.
+  if (!scores) return edge.rawWeight;
+  const value = state.edgeMeasure === "weight" ? scores.weight : scores.score;
+  return value === null || value === undefined ? edge.rawWeight : value;
 }
 
 function edgeRank(edge, metric) {
   if (metric === "raw") return edge.rawRank;
-  if (metric === "wiper1") return edge.wiper1 && edge.wiper1.rank;
-  return edge.wiper2 && edge.wiper2.rank;
+  if (metric === "wiper1") return (edge.wiper1 && edge.wiper1.rank) || edge.rawRank;
+  return (edge.wiper2 && edge.wiper2.rank) || edge.rawRank;
 }
 
 function nodeValue(node) {
