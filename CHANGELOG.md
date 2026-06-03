@@ -1,5 +1,38 @@
 # Changelog
 
+## 1.110 — 2026-06-03
+
+Deep-link data loading and dense-graph robustness. Builds on the 1.100
+redesign; the `POST /api/analyze` contract is unchanged (additive summary
+fields only).
+
+### Deep-link loader (`app.js`)
+- Launch SPINNER with an external dataset at boot, in precedence order:
+  - embedded hash payload — `#data=<base64 JSON>`, `#edges=<base64 TSV>`,
+    or `#text=<URI-encoded TSV>` (self-contained link, no hosting needed);
+  - `?edges=<url>` — fetches a tab-separated edge list cross-origin (good
+    for large datasets);
+  - `postMessage({type:'spinner:load', ...})` from a parent frame, with a
+    `spinner:loaded` acknowledgement.
+- Query options honored alongside all paths: `?title=`, `?iterations=`,
+  `?novel=1`. A failed fetch falls back to the demo network with a chat
+  notice.
+
+### Dense-graph robustness (`webapp.py`)
+- WIPER1, WIPER2, and WINNER are scored independently and each guarded
+  against `(RuntimeError, MemoryError, OverflowError)`, so raw edges plus
+  whichever engines succeed always return instead of failing the whole
+  request. The response carries `summary.warnings` and per-engine
+  `wiper1Available` / `wiper2Available` / `winnerAvailable` flags, plus an
+  optional `maxPathsPerPair` request parameter.
+- Recursion limit and request-thread C-stack raised so deep-but-bounded
+  WIPER path enumeration completes on mid-size graphs.
+
+### Edge rendering (`app.js`)
+- Edges fall back to raw weight for width, filtering, and ranking when the
+  selected WIPER metric is unavailable, so a degraded graph still renders
+  its edges instead of showing none.
+
 ## 1.100 — 2026-05-08
 
 Full GUI redesign of the SPINNER explorer, delivered as a Claude Design
