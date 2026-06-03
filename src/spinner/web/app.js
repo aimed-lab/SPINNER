@@ -304,14 +304,18 @@ function edgeScoreObject(edge, metric = state.metric) {
 function edgeValue(edge, metric = state.metric) {
   if (metric === "raw") return edge.rawWeight;
   const scores = edgeScoreObject(edge, metric);
-  if (!scores) return null;
-  return state.edgeMeasure === "weight" ? scores.weight : scores.score;
+  // When the selected WIPER metric is unavailable (e.g. the backend skipped
+  // WIPER1/WIPER2 on a dense graph), fall back to raw weight so edges still
+  // render and filter instead of vanishing from the canvas.
+  if (!scores) return edge.rawWeight;
+  const value = state.edgeMeasure === "weight" ? scores.weight : scores.score;
+  return value === null || value === undefined ? edge.rawWeight : value;
 }
 
 function edgeRank(edge, metric) {
   if (metric === "raw") return edge.rawRank;
-  if (metric === "wiper1") return edge.wiper1 && edge.wiper1.rank;
-  return edge.wiper2 && edge.wiper2.rank;
+  if (metric === "wiper1") return (edge.wiper1 && edge.wiper1.rank) || edge.rawRank;
+  return (edge.wiper2 && edge.wiper2.rank) || edge.rawRank;
 }
 
 function nodeValue(node) {
@@ -1547,12 +1551,19 @@ async function analyze() {
     device: els.device.value,
     includeNovel: els.includeNovel.checked,
   };
-  const response = await fetch(apiUrl("/api/analyze"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const result = await response.json();
+  let response, result;
+  try {
+    response = await fetch(apiUrl("/api/analyze"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    result = await response.json();
+  } catch (err) {
+    els.summary.textContent = `Analysis failed: ${err && err.message ? err.message : err}`;
+    els.summary.className = "error";
+    return;
+  }
   if (!response.ok) {
     els.summary.textContent = result.error || "Analysis failed";
     els.summary.className = "error";
@@ -1568,6 +1579,12 @@ async function analyze() {
   state.selectedKind = null;
   state.detailsHidden = true;
   render();
+  const warns = (result.summary && result.summary.warnings) || [];
+  if (warns.length) {
+    addChatMessage("agent", `Analysis warnings:\n- ${warns.join("\n- ")}`);
+    // also flag the status badge so it's not silently lost
+    els.summary.className = "warning";
+  }
 }
 
 function generatorSettings() {
@@ -2194,7 +2211,149 @@ window.addEventListener("resize", () => {
     setSidebarCollapsed(true);
   }
 });
-makeRandom();
+// ===================== DEEP-LINK LOADER =====================
+// Upstream tools can hand SPINNER an edge list at boot via any of:
+//
+//   1. URL hash params (data embedded in the link — no hosting needed)
+//        #data=<base64(JSON({text, iterations, includeNovel,
+//                           projectName, projectFolder, maxPathsPerPair}))>
+//        #edges=<base64(TSV-text)>
+//        #text=<URI-encoded TSV-text>
+//
+//   2. Query string (data fetched from a URL — good for large datasets)
+//        ?edges=<url>     fetches a tab-separated edge list and analyzes it
+//      Plus optional query options, also honored alongside the hash/fetch
+//      payloads: ?iterations=<n>, ?novel=1, ?title=<label>.
+//
+//   3. postMessage from a parent frame
+//        parent.postMessage({type: 'spinner:load', text, iterations, ...}, '*')
+//      SPINNER replies with {type: 'spinner:loaded', ok: <bool>}.
+//
+// Precedence at boot: an embedded hash payload wins (the link is
+// self-contained); otherwise ?edges=<url> is fetched; otherwise SPINNER
+// falls back to the random scale-free demo network it used to boot with.
+// All paths populate the Build panel and trigger analyze().
+function _b64decodeUtf8(s) {
+  // tolerate URL-safe base64 and missing padding
+  s = String(s).replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const bin = atob(s);
+  try {
+    return decodeURIComponent(escape(bin)); // legacy UTF-8 widening
+  } catch (_e) {
+    return bin;
+  }
+}
+
+function readDeepLinkFromHash() {
+  const raw = (location.hash || "").replace(/^#/, "");
+  if (!raw) return null;
+  const params = new URLSearchParams(raw);
+  try {
+    if (params.has("data")) {
+      const obj = JSON.parse(_b64decodeUtf8(params.get("data")));
+      if (obj && typeof obj === "object" && typeof obj.text === "string" && obj.text.trim()) {
+        return obj;
+      }
+    }
+    if (params.has("edges")) {
+      const text = _b64decodeUtf8(params.get("edges"));
+      if (text.trim()) return { text };
+    }
+    if (params.has("text")) {
+      const text = decodeURIComponent(params.get("text"));
+      if (text.trim()) return { text };
+    }
+  } catch (err) {
+    console.warn("[spinner] deep-link decode failed:", err);
+  }
+  return null;
+}
+
+function applyDeepLinkPayload(payload) {
+  if (!payload || typeof payload.text !== "string" || !payload.text.trim()) return false;
+  els.edgeText.value = payload.text;
+  if (payload.iterations != null && Number.isFinite(Number(payload.iterations))) {
+    els.iterations.value = String(Number(payload.iterations));
+  }
+  if (payload.includeNovel != null) els.includeNovel.checked = !!payload.includeNovel;
+  if (payload.device && typeof payload.device === "string") els.device.value = payload.device;
+  const nameEl = document.getElementById("projectNameInput");
+  if (nameEl && typeof payload.projectName === "string") nameEl.value = payload.projectName;
+  const folderEl = document.getElementById("projectFolderInput");
+  if (folderEl && typeof payload.projectFolder === "string") folderEl.value = payload.projectFolder;
+  // Open the paste-edge-list disclosure so the loaded data is visible.
+  const det = els.edgeText && els.edgeText.closest && els.edgeText.closest("details");
+  if (det) det.open = true;
+  analyze();
+  return true;
+}
+
+// Query-string options: ?edges=<url> plus ?iterations=, ?novel=1, ?title=.
+function readQueryOptions() {
+  const q = new URLSearchParams(location.search);
+  const opts = {};
+  if (q.has("iterations") && Number.isFinite(Number(q.get("iterations")))) {
+    opts.iterations = Number(q.get("iterations"));
+  }
+  if (q.get("novel") === "1") opts.includeNovel = true;
+  if (q.has("title")) opts.title = q.get("title");
+  if (q.has("edges")) opts.edgesUrl = q.get("edges");
+  return opts;
+}
+
+window.addEventListener("message", (event) => {
+  const msg = event && event.data;
+  if (!msg || typeof msg !== "object" || msg.type !== "spinner:load") return;
+  const ok = applyDeepLinkPayload(msg);
+  try {
+    if (event.source && typeof event.source.postMessage === "function") {
+      event.source.postMessage({ type: "spinner:loaded", ok: !!ok }, "*");
+    }
+  } catch (_err) { /* ignore reply failures */ }
+});
+
+function bootDeepLink() {
+  const opts = readQueryOptions();
+  if (opts.title) {
+    try { document.title = opts.title + " · SPINNER"; } catch (_e) { /* ignore */ }
+  }
+  // 1. Embedded hash payload wins — the link carries its own data.
+  const hashPayload = readDeepLinkFromHash();
+  if (hashPayload) {
+    if (hashPayload.iterations == null && opts.iterations != null) hashPayload.iterations = opts.iterations;
+    if (hashPayload.includeNovel == null && opts.includeNovel != null) hashPayload.includeNovel = opts.includeNovel;
+    if (applyDeepLinkPayload(hashPayload)) return;
+  }
+  // 2. ?edges=<url> — fetch a tab-separated edge list cross-origin.
+  if (opts.edgesUrl) {
+    if (els.summary) els.summary.textContent = "Loading edges from " + opts.edgesUrl + " …";
+    fetch(opts.edgesUrl)
+      .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+      .then((txt) => {
+        const body = txt.trim();
+        if (!body) throw new Error("empty edge list");
+        const ok = applyDeepLinkPayload({
+          text: body,
+          iterations: opts.iterations,
+          includeNovel: opts.includeNovel,
+        });
+        if (!ok) throw new Error("no valid edges in response");
+      })
+      .catch((err) => {
+        makeRandom();
+        addChatMessage(
+          "agent",
+          "Could not load edges from the URL (" + err.message + "); showing the sample network instead. You can paste an edge list into the Build panel."
+        );
+      });
+    return; // async path owns the boot
+  }
+  // 3. Nothing embedded or fetched — fall back to the demo network.
+  makeRandom();
+}
+
+bootDeepLink();
 addChatMessage("agent", "Tell me how to shape the network: choose WIPER1 or WIPER2, show top N edges, plan a trip from A to F, generate a scale-free graph, run Geneterrain, or analyze the current input.");
 
 // ===================== ASSISTANT DRAWER =====================
