@@ -281,6 +281,56 @@ error — that path returns `200` with warnings as above.
 
 ---
 
+## 3. GeneTerrain target map (fuse SIGnature gene importance)
+
+The **GeneTerrain target map** (Results rail → "GeneTerrain target map") overlays
+an external **gene-importance matrix** on the analyzed network to highlight
+drug targets. It is designed to consume **SIGnature** attributions (Gold et al.,
+*Nat Biotechnol* 2026, "Scoring gene importance by interpreting single-cell
+foundation models"), but accepts any per-gene, per-cell-type score matrix.
+
+**Architectural note:** this fusion lives entirely in the GeneTerrain UI layer.
+SPINNER's scoring (`/api/analyze`, WIPER, WINNER) stays **network-only** — it
+never ingests expression or attribution data. GeneTerrain combines:
+
+```
+elevation(g) = networkLeverage(g)        ← SPINNER WINNER node score (potency proxy)
+             × importance(g | target)    ← SIGnature attribution in the diseased cell type
+color(g)     = selectivity(g) = importance(g|target) / (importance(g|target) + maxₒ importance(g|off-targetₒ))
+```
+
+Tall + green = potent and cell-type-selective (best target); tall + red =
+potent but promiscuous (cross-cell toxicity risk).
+
+### SIGnature matrix format
+
+Tab- or comma-delimited. Header row `gene <cellType1> <cellType2> …`, then one
+row per gene with its attribution score in each cell type:
+
+```tsv
+gene	monocyte	Tcell	Bcell
+S100A9	8.2	0.3	0.4
+RETN	7.1	0.4	0.5
+FOS	6.0	5.8	5.5
+```
+
+Genes are matched to the network by id; unmatched genes are ignored. Choose the
+**target (diseased) cell type** in the panel; selectivity is computed against
+the remaining columns. Load via the panel's file picker / paste box, or hand it
+off from an upstream tool with the query parameter below.
+
+### `?sig=<url>` — hand off attributions from an upstream tool
+
+```
+http://127.0.0.1:8765/?edges=<network-url>&sig=<sig-matrix-url>&title=KD%20targets
+```
+
+SPINNER analyzes the network as usual, then fetches the SIGnature matrix
+(cross-origin; the host must send CORS headers) and **auto-opens the GeneTerrain
+target map**. `?sig=` only feeds GeneTerrain — it never reaches `/api/analyze`.
+Export the fused ranking (network leverage × importance × selectivity) from the
+panel's "Export target scores (TSV)" button.
+
 ## Endpoint summary
 
 | Method | Path | Purpose |

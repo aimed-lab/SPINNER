@@ -32,6 +32,8 @@ const state = {
   explorerFullscreen: false,
   plannedRoute: null,
   routeMode: "wiper2",
+  sig: null,            // GeneTerrain SIGnature overlay: {cellTypes, target, byGene, synthetic}
+  sigPendingUrl: null,  // ?sig=<url> deep-link queued until a network is analyzed
   zoom: 1,
   panX: 0,
   panY: 0,
@@ -89,6 +91,21 @@ const els = {
   resultEdges: document.getElementById("resultEdgesBtn"),
   resultNodes: document.getElementById("resultNodesBtn"),
   outputGeneterrain: document.getElementById("outputGeneterrainBtn"),
+  geneterrainOpen: document.getElementById("geneterrainOpenBtn"),
+  geneterrainOverlay: document.getElementById("geneterrainOverlay"),
+  geneterrainScrim: document.getElementById("geneterrainScrim"),
+  geneterrainClose: document.getElementById("geneterrainCloseBtn"),
+  geneterrainCanvas: document.getElementById("geneterrainCanvas"),
+  geneterrainTargetSelect: document.getElementById("geneterrainTargetSelect"),
+  geneterrainSource: document.getElementById("geneterrainSource"),
+  geneterrainFileInput: document.getElementById("geneterrainFileInput"),
+  geneterrainPasteBtn: document.getElementById("geneterrainPasteBtn"),
+  geneterrainSynthBtn: document.getElementById("geneterrainSynthBtn"),
+  geneterrainPasteWrap: document.getElementById("geneterrainPasteWrap"),
+  geneterrainPasteText: document.getElementById("geneterrainPasteText"),
+  geneterrainPasteApply: document.getElementById("geneterrainPasteApply"),
+  geneterrainRows: document.getElementById("geneterrainRows"),
+  geneterrainExport: document.getElementById("geneterrainExportBtn"),
   chatLog: document.getElementById("chatLog"),
   chatInput: document.getElementById("chatInput"),
   chatApply: document.getElementById("chatApplyBtn"),
@@ -1585,6 +1602,20 @@ async function analyze() {
     // also flag the status badge so it's not silently lost
     els.summary.className = "warning";
   }
+  // Synthetic GeneTerrain attributions are tied to the old gene set — drop
+  // them so they regenerate for the new network. Real loaded data is kept
+  // (matched by gene id). SPINNER's scoring is untouched by any of this.
+  if (state.sig && state.sig.synthetic) state.sig = null;
+  // Consume a queued ?sig=<url> deep-link now that a network exists.
+  if (state.sigPendingUrl) {
+    const url = state.sigPendingUrl;
+    state.sigPendingUrl = null;
+    loadSigFromUrl(url)
+      .then(() => { openGeneterrain(); })
+      .catch((err) => addChatMessage("agent", `Could not load SIGnature data from ${url} (${err.message}).`));
+  } else if (document.body.classList.contains("geneterrainOpen")) {
+    renderGeneterrain();
+  }
 }
 
 function generatorSettings() {
@@ -1774,6 +1805,277 @@ function exportShownNetwork() {
 function outputGeneterrainNetwork() {
   downloadText("spinner_geneterrain_network.tsv", rowsToTsv(shownNetworkRows()));
   addChatMessage("agent", "Exported the visible network as a Geneterrain-ready TSV.");
+}
+
+// ===================== GENETERRAIN TARGET MAP =====================
+// SPINNER stays network-only (no expression prior in WIPER/WINNER). The
+// GeneTerrain layer FUSES SPINNER's topology-derived node leverage with an
+// externally supplied SIGnature attribution matrix A[gene, cellType] (Gold
+// et al., Nat Biotechnol 2026) to map drug-target potential:
+//   elevation = networkLeverage(g) × importance(g | target cell type)   ← potency × functional importance
+//   color     = selectivity(g) = imp(target) / (imp(target) + max off-target imp)   ← low cross-cell toxicity
+// SIGnature data lives ONLY here; it never feeds back into /api/analyze.
+
+// Parse a SIGnature matrix: header `gene <ct1> <ct2> …`, then one row per gene.
+function parseSigMatrix(text) {
+  const lines = String(text || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith("#"));
+  if (lines.length < 2) return null;
+  const header = lines[0].split(/[\t,]+/).map((s) => s.trim());
+  const cellTypes = header.slice(1);
+  if (cellTypes.length < 1) return null;
+  const byGene = new Map();
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(/[\t,]+/).map((s) => s.trim());
+    if (parts.length < 2) continue;
+    const gene = parts[0];
+    const scores = {};
+    cellTypes.forEach((ct, j) => {
+      const v = Number(parts[j + 1]);
+      if (Number.isFinite(v)) scores[ct] = v;
+    });
+    if (Object.keys(scores).length) byGene.set(gene, scores);
+  }
+  if (!byGene.size) return null;
+  return { cellTypes, byGene };
+}
+
+// Synthesize a plausible A[gene, cellType] for the current network so the
+// map is explorable without real data. Clearly flagged as synthetic.
+function synthSig() {
+  if (!state.data) return null;
+  const cellTypes = ["monocyte", "T cell", "B cell", "epithelial", "fibroblast"];
+  const byGene = new Map();
+  const ids = state.data.nodes.map((n) => n.id);
+  ids.forEach((id, idx) => {
+    // Deterministic pseudo-random from index (no Math.random — keeps reloads stable).
+    const seed = (k) => {
+      const x = Math.sin((idx + 1) * 12.9898 + k * 78.233) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    // Give each gene a "home" cell type with high attribution, low elsewhere.
+    const home = idx % cellTypes.length;
+    const scores = {};
+    cellTypes.forEach((ct, c) => {
+      const base = 0.2 + 1.6 * seed(c);
+      const boost = c === home ? 3.0 + 4.0 * seed(99) : 0;
+      scores[ct] = Number((base + boost).toFixed(3));
+    });
+    byGene.set(id, scores);
+  });
+  return { cellTypes, byGene };
+}
+
+function setSigData(parsed, sourceLabel, synthetic) {
+  if (!parsed) return false;
+  const prevTarget = state.sig && state.sig.target;
+  state.sig = {
+    cellTypes: parsed.cellTypes,
+    byGene: parsed.byGene,
+    synthetic: !!synthetic,
+    source: sourceLabel,
+    target: parsed.cellTypes.includes(prevTarget) ? prevTarget : parsed.cellTypes[0],
+  };
+  // Populate the target selector.
+  if (els.geneterrainTargetSelect) {
+    els.geneterrainTargetSelect.innerHTML = parsed.cellTypes
+      .map((ct) => `<option value="${escapeHtml(ct)}">${escapeHtml(ct)}</option>`)
+      .join("");
+    els.geneterrainTargetSelect.value = state.sig.target;
+  }
+  if (els.geneterrainSource) {
+    const matched = [...parsed.byGene.keys()].filter((g) => state.data && state.data.nodes.some((n) => n.id === g)).length;
+    els.geneterrainSource.textContent = synthetic
+      ? "Synthetic demo data (no real SIGnature loaded)"
+      : `${sourceLabel} — ${parsed.byGene.size} genes, ${matched} matched to network`;
+  }
+  return true;
+}
+
+function loadSigFromUrl(url) {
+  return fetch(url)
+    .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+    .then((txt) => {
+      const parsed = parseSigMatrix(txt);
+      if (!parsed) throw new Error("could not parse SIGnature matrix");
+      setSigData(parsed, "URL: " + url, false);
+      return true;
+    });
+}
+
+// Fuse SPINNER network leverage with SIGnature importance + selectivity.
+function computeGeneterrain() {
+  if (!state.data) return null;
+  if (!state.sig) setSigData(synthSig(), "synthetic", true);
+  const sig = state.sig;
+  const target = sig.target;
+  const nodes = state.data.nodes;
+  const winners = nodes.map((n) => Number(n.winner) || 0);
+  const wMin = Math.min(...winners), wMax = Math.max(...winners);
+  const impVals = [];
+  nodes.forEach((n) => {
+    const s = sig.byGene.get(n.id);
+    if (s && Number.isFinite(s[target])) impVals.push(s[target]);
+  });
+  const impMax = impVals.length ? Math.max(...impVals) : 1;
+  const genes = nodes.map((n) => {
+    const pos = state.positions.get(n.id) || { x: 450, y: 310 };
+    const net = normalize(n.winner, wMin, wMax);            // SPINNER network leverage (potency proxy)
+    const s = sig.byGene.get(n.id);
+    const impTarget = s && Number.isFinite(s[target]) ? s[target] : 0;
+    let offMax = 0;
+    if (s) sig.cellTypes.forEach((ct) => { if (ct !== target && Number.isFinite(s[ct])) offMax = Math.max(offMax, s[ct]); });
+    const imp = impMax > 0 ? impTarget / impMax : 0;        // normalized functional importance in target cell type
+    const sel = impTarget + offMax > 0 ? impTarget / (impTarget + offMax) : 0; // cross-cell selectivity ∈ [0,1]
+    const amp = net * imp;                                  // elevation amplitude = potency × importance
+    const targetScore = amp * sel;                          // composite drug-target score
+    return { id: n.id, x: pos.x, y: pos.y, net, imp, sel, amp, targetScore, hasSig: !!s };
+  });
+  return { genes, target };
+}
+
+// red(low sel) → amber → teal → green(high sel)
+function selToRgb(sel) {
+  const stops = [
+    [0.0, [163, 38, 30]],
+    [0.5, [180, 133, 8]],
+    [0.72, [44, 138, 122]],
+    [1.0, [31, 122, 70]],
+  ];
+  let a = stops[0], b = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (sel >= stops[i][0] && sel <= stops[i + 1][0]) { a = stops[i]; b = stops[i + 1]; break; }
+  }
+  const t = (sel - a[0]) / (b[0] - a[0] || 1);
+  return [0, 1, 2].map((k) => Math.round(a[1][k] + (b[1][k] - a[1][k]) * t));
+}
+
+function renderGeneterrain() {
+  const canvas = els.geneterrainCanvas;
+  if (!canvas || !canvas.getContext) return;
+  const model = computeGeneterrain();
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const bg = [12, 26, 43];
+  if (!model || !model.genes.length) {
+    ctx.fillStyle = "rgb(12,26,43)"; ctx.fillRect(0, 0, W, H);
+    return;
+  }
+  const genes = model.genes;
+  // Offscreen low-res field, scaled up with smoothing.
+  const gw = 190, gh = Math.round(gw * H / W);
+  const sx = gw / 900, sy = gh / 620;       // viewBox (900×620) → grid
+  const sigma = 9.5, twoSig2 = 2 * sigma * sigma;
+  const elev = new Float64Array(gw * gh);
+  const selAcc = new Float64Array(gw * gh);
+  const wAcc = new Float64Array(gw * gh);
+  genes.forEach((g) => {
+    if (g.amp <= 0) return;
+    const cx = g.x * sx, cy = g.y * sy;
+    const rad = 26;
+    const x0 = Math.max(0, Math.floor(cx - rad)), x1 = Math.min(gw - 1, Math.ceil(cx + rad));
+    const y0 = Math.max(0, Math.floor(cy - rad)), y1 = Math.min(gh - 1, Math.ceil(cy + rad));
+    for (let gy = y0; gy <= y1; gy++) {
+      for (let gx = x0; gx <= x1; gx++) {
+        const d2 = (gx - cx) * (gx - cx) + (gy - cy) * (gy - cy);
+        const k = Math.exp(-d2 / twoSig2) * g.amp;
+        if (k < 1e-4) continue;
+        const i = gy * gw + gx;
+        elev[i] += k;
+        selAcc[i] += k * g.sel;
+        wAcc[i] += k;
+      }
+    }
+  });
+  let maxElev = 0;
+  for (let i = 0; i < elev.length; i++) if (elev[i] > maxElev) maxElev = elev[i];
+  maxElev = maxElev || 1;
+  const off = document.createElement("canvas");
+  off.width = gw; off.height = gh;
+  const offCtx = off.getContext("2d");
+  const img = offCtx.createImageData(gw, gh);
+  for (let i = 0; i < elev.length; i++) {
+    const localSel = wAcc[i] > 0 ? selAcc[i] / wAcc[i] : 0.5;
+    const e = Math.pow(elev[i] / maxElev, 0.7);   // gamma for contrast
+    const [r, g, b] = selToRgb(localSel);
+    const p = i * 4;
+    img.data[p] = Math.round(bg[0] + (r - bg[0]) * e);
+    img.data[p + 1] = Math.round(bg[1] + (g - bg[1]) * e);
+    img.data[p + 2] = Math.round(bg[2] + (b - bg[2]) * e);
+    img.data[p + 3] = 255;
+  }
+  offCtx.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(off, 0, 0, gw, gh, 0, 0, W, H);
+
+  // Node markers + labels for top targets.
+  const cScaleX = W / 900, cScaleY = H / 620;
+  const ranked = [...genes].sort((a, b) => b.targetScore - a.targetScore);
+  const tMax = ranked.length ? ranked[0].targetScore || 1 : 1;
+  genes.forEach((g) => {
+    if (!g.hasSig) return;
+    const px = g.x * cScaleX, py = g.y * cScaleY;
+    const [r, gg, b] = selToRgb(g.sel);
+    const rad = 2.5 + 7 * (g.targetScore / (tMax || 1));
+    ctx.beginPath();
+    ctx.arc(px, py, rad, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${r},${gg},${b},0.92)`;
+    ctx.strokeStyle = "rgba(255,255,255,0.7)";
+    ctx.lineWidth = 1;
+    ctx.fill(); ctx.stroke();
+  });
+  ctx.font = "600 11px IBM Plex Sans, sans-serif";
+  ctx.textBaseline = "middle";
+  ranked.slice(0, 8).forEach((g) => {
+    const px = g.x * cScaleX, py = g.y * cScaleY;
+    const label = g.id;
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = "rgba(8,16,28,0.72)";
+    ctx.fillRect(px + 7, py - 8, tw + 8, 16);
+    ctx.fillStyle = "#eef2f8";
+    ctx.fillText(label, px + 11, py + 1);
+  });
+
+  // Ranked target table.
+  if (els.geneterrainRows) {
+    els.geneterrainRows.innerHTML = ranked.slice(0, 16).map((g) => {
+      const [r, gg, b] = selToRgb(g.sel);
+      return `<tr>
+        <td><span class="gtDot" style="background:rgb(${r},${gg},${b})"></span>${escapeHtml(g.id)}</td>
+        <td>${fmt(g.net, 2)}</td>
+        <td>${fmt(g.imp, 2)}</td>
+        <td>${fmt(g.sel, 2)}</td>
+        <td>${fmt(g.targetScore, 3)}</td>
+      </tr>`;
+    }).join("");
+  }
+}
+
+function geneterrainExportRows() {
+  const model = computeGeneterrain();
+  const rows = [["gene", "networkLeverage", "importanceInTarget", "selectivity", "targetScore", "targetCellType"]];
+  if (!model) return rows;
+  [...model.genes].sort((a, b) => b.targetScore - a.targetScore).forEach((g) => {
+    rows.push([g.id, fmt(g.net, 4), fmt(g.imp, 4), fmt(g.sel, 4), fmt(g.targetScore, 4), model.target]);
+  });
+  return rows;
+}
+
+function openGeneterrain() {
+  if (!state.data) {
+    addChatMessage("agent", "Generate or analyze a network first, then open the GeneTerrain target map.");
+    return;
+  }
+  document.body.classList.add("geneterrainOpen");
+  if (els.geneterrainOverlay) els.geneterrainOverlay.setAttribute("aria-hidden", "false");
+  if (els.geneterrainScrim) els.geneterrainScrim.hidden = false;
+  renderGeneterrain();
+}
+
+function closeGeneterrain() {
+  document.body.classList.remove("geneterrainOpen");
+  if (els.geneterrainOverlay) els.geneterrainOverlay.setAttribute("aria-hidden", "true");
+  if (els.geneterrainScrim) setTimeout(() => { els.geneterrainScrim.hidden = true; }, 200);
 }
 
 function outputNotionReport() {
@@ -2087,6 +2389,60 @@ els.generateGeneterrain.addEventListener("click", makeGeneterrain);
 els.resultEdges.addEventListener("click", () => setResultTab("edges", { focus: true }));
 els.resultNodes.addEventListener("click", () => setResultTab("nodes", { focus: true }));
 els.outputGeneterrain.addEventListener("click", outputGeneterrainNetwork);
+
+// GeneTerrain target-map overlay wiring
+if (els.geneterrainOpen) els.geneterrainOpen.addEventListener("click", openGeneterrain);
+if (els.geneterrainClose) els.geneterrainClose.addEventListener("click", closeGeneterrain);
+if (els.geneterrainScrim) els.geneterrainScrim.addEventListener("click", closeGeneterrain);
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.body.classList.contains("geneterrainOpen")) closeGeneterrain();
+});
+if (els.geneterrainTargetSelect) {
+  els.geneterrainTargetSelect.addEventListener("change", () => {
+    if (state.sig) { state.sig.target = els.geneterrainTargetSelect.value; renderGeneterrain(); }
+  });
+}
+if (els.geneterrainSynthBtn) {
+  els.geneterrainSynthBtn.addEventListener("click", () => {
+    setSigData(synthSig(), "synthetic", true);
+    renderGeneterrain();
+  });
+}
+if (els.geneterrainPasteBtn) {
+  els.geneterrainPasteBtn.addEventListener("click", () => {
+    if (els.geneterrainPasteWrap) els.geneterrainPasteWrap.open = !els.geneterrainPasteWrap.open;
+  });
+}
+if (els.geneterrainPasteApply) {
+  els.geneterrainPasteApply.addEventListener("click", () => {
+    const parsed = parseSigMatrix(els.geneterrainPasteText ? els.geneterrainPasteText.value : "");
+    if (!parsed) { addChatMessage("agent", "Couldn't parse that SIGnature matrix — expected a header `gene <tab> cellType1 <tab> …` then one row per gene."); return; }
+    setSigData(parsed, "pasted matrix", false);
+    if (els.geneterrainPasteWrap) els.geneterrainPasteWrap.open = false;
+    renderGeneterrain();
+  });
+}
+if (els.geneterrainFileInput) {
+  els.geneterrainFileInput.addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const parsed = parseSigMatrix(String(reader.result || ""));
+      if (!parsed) { addChatMessage("agent", "Couldn't parse that SIGnature file — expected `gene <tab> cellType1 <tab> …`."); return; }
+      setSigData(parsed, "file: " + file.name, false);
+      renderGeneterrain();
+    };
+    reader.readAsText(file);
+  });
+}
+if (els.geneterrainExport) {
+  els.geneterrainExport.addEventListener("click", () => {
+    downloadText("spinner_geneterrain_target_scores.tsv", rowsToTsv(geneterrainExportRows()));
+    addChatMessage("agent", "Exported GeneTerrain drug-target scores (network leverage × SIGnature importance × selectivity).");
+  });
+}
+
 const tidyLayoutBtn = document.getElementById("tidyLayoutBtn");
 if (tidyLayoutBtn) {
   tidyLayoutBtn.addEventListener("click", () => {
@@ -2299,6 +2655,7 @@ function readQueryOptions() {
   if (q.get("novel") === "1") opts.includeNovel = true;
   if (q.has("title")) opts.title = q.get("title");
   if (q.has("edges")) opts.edgesUrl = q.get("edges");
+  if (q.has("sig")) opts.sigUrl = q.get("sig");   // SIGnature matrix for GeneTerrain (UI-only; never feeds /api/analyze)
   return opts;
 }
 
@@ -2318,6 +2675,9 @@ function bootDeepLink() {
   if (opts.title) {
     try { document.title = opts.title + " · SPINNER"; } catch (_e) { /* ignore */ }
   }
+  // Queue a SIGnature matrix for GeneTerrain; analyze() consumes it once a
+  // network exists, then auto-opens the target map. Does not affect scoring.
+  if (opts.sigUrl) state.sigPendingUrl = opts.sigUrl;
   // 1. Embedded hash payload wins — the link carries its own data.
   const hashPayload = readDeepLinkFromHash();
   if (hashPayload) {

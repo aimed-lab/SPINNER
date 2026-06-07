@@ -131,6 +131,10 @@
               <span class="railKey" aria-hidden="true">N</span>
               <span>Node ranking table</span>
             </button>
+            <button id="geneterrainOpenBtn" type="button" class="railAction">
+              <span class="railKey" aria-hidden="true">⌬</span>
+              <span>GeneTerrain target map</span>
+            </button>
           </div>
           <section class="selectedPanel" id="selectedPanel">
             <div class="sectionTitle"><span class="sectionRule"></span><span class="blockLabel">Selection</span></div>
@@ -404,6 +408,61 @@
               <span class="chatHint">⌘ ⏎ to send</span>
               <button id="chatApplyBtn" type="button">Send</button>
             </div>
+          </div>
+        </aside>
+
+        <div id="geneterrainScrim" class="gtScrim" hidden></div>
+        <aside id="geneterrainOverlay" class="gtOverlay" aria-label="GeneTerrain target map" aria-hidden="true">
+          <header class="gtHeader">
+            <div class="gtTitle">
+              <strong>GeneTerrain <em>target map</em></strong>
+              <span class="gtSubtitle">SPINNER network leverage × SIGnature attribution &amp; cross-cell selectivity</span>
+            </div>
+            <button id="geneterrainCloseBtn" type="button" class="gtClose" aria-label="Close GeneTerrain">×</button>
+          </header>
+          <div class="gtBody">
+            <div class="gtCanvasWrap">
+              <canvas id="geneterrainCanvas" width="760" height="520" role="img" aria-label="GeneTerrain elevation map"></canvas>
+              <div id="geneterrainColorbar" class="gtColorbar" aria-hidden="true"></div>
+            </div>
+            <aside class="gtSide">
+              <div class="gtControls">
+                <div class="gtField">
+                  <label for="geneterrainTargetSelect">Target (diseased) cell type</label>
+                  <select id="geneterrainTargetSelect"></select>
+                </div>
+                <div class="gtSourceRow">
+                  <span id="geneterrainSource" class="gtSource">No SIGnature data — showing synthetic demo</span>
+                </div>
+                <div class="gtBtns">
+                  <label class="gtFilePick">
+                    <input id="geneterrainFileInput" type="file" accept=".tsv,.txt,.csv" hidden />
+                    <span>Load SIGnature matrix…</span>
+                  </label>
+                  <button id="geneterrainPasteBtn" type="button">Paste…</button>
+                  <button id="geneterrainSynthBtn" type="button">Synthetic demo</button>
+                </div>
+                <details id="geneterrainPasteWrap" class="gtPasteWrap" hidden>
+                  <summary>Paste SIGnature matrix (tsv: gene ⇥ cellType1 ⇥ cellType2 …)</summary>
+                  <textarea id="geneterrainPasteText" spellcheck="false" placeholder="gene	monocyte	Tcell	Bcell&#10;S100A9	5.8	0.4	0.3&#10;RETN	4.9	0.2	0.1"></textarea>
+                  <button id="geneterrainPasteApply" type="button">Apply</button>
+                </details>
+              </div>
+              <div class="gtLegend">
+                <div class="gtLegendRow"><span class="gtSwatch gtSwatchHi"></span>tall + green = potent &amp; selective (best target)</div>
+                <div class="gtLegendRow"><span class="gtSwatch gtSwatchTox"></span>tall + red = potent but promiscuous (toxicity risk)</div>
+                <div class="gtLegendRow"><span class="gtSwatch gtSwatchLo"></span>low = little network leverage or importance</div>
+              </div>
+              <div class="gtTableWrap">
+                <table class="gtTable">
+                  <thead>
+                    <tr><th>Gene</th><th>Net</th><th>Imp</th><th>Sel</th><th>Target</th></tr>
+                  </thead>
+                  <tbody id="geneterrainRows"></tbody>
+                </table>
+              </div>
+              <button id="geneterrainExportBtn" type="button" class="gtExport">Export target scores (TSV)</button>
+            </aside>
           </div>
         </aside>
         <div id="resultsResizeHandle" class="resizeHandle resizeHandleHorizontal" role="separator" aria-orientation="horizontal" aria-label="Resize results panel"></div>

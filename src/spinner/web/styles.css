@@ -2321,3 +2321,122 @@ body[data-theme="dark"] .nodeTable th {
   .settingsPopover { top: 64px; left: 8px; right: 8px; width: auto; max-height: calc(100% - 80px); }
   .settingsGrid .filterGroup { grid-template-columns: 1fr; }
 }
+
+/* ===================== GENETERRAIN TARGET MAP ===================== */
+.gtScrim {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(15, 21, 28, 0.42);
+  opacity: 0; pointer-events: none; transition: opacity 0.2s ease;
+}
+body.geneterrainOpen .gtScrim { opacity: 1; pointer-events: auto; }
+
+.gtOverlay {
+  position: fixed; z-index: 61;
+  top: 50%; left: 50%; transform: translate(-50%, -48%) scale(0.99);
+  width: min(1120px, 94vw); max-height: 90vh;
+  display: flex; flex-direction: column;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+body.geneterrainOpen .gtOverlay {
+  opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1);
+}
+
+.gtHeader {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line);
+}
+.gtTitle strong { font-size: 15px; font-weight: 600; }
+.gtTitle em { font-style: normal; color: var(--accent); }
+.gtSubtitle { display: block; margin-top: 2px; font-size: 11.5px; color: var(--muted); }
+.gtClose {
+  border: 1px solid var(--line-2); background: var(--surface-2);
+  width: 30px; height: 30px; border-radius: var(--radius); cursor: pointer;
+  font-size: 18px; line-height: 1; color: var(--muted);
+}
+.gtClose:hover { background: var(--surface-3); color: var(--ink); }
+
+.gtBody {
+  display: grid; grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 14px; padding: 14px 16px; overflow: hidden; min-height: 0;
+}
+.gtCanvasWrap {
+  position: relative; border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: hidden; background: #0c1a2b; min-height: 360px;
+}
+#geneterrainCanvas { display: block; width: 100%; height: auto; }
+.gtColorbar {
+  position: absolute; right: 10px; bottom: 10px;
+  width: 132px; height: 12px; border-radius: 6px;
+  background: linear-gradient(90deg, #a3261e 0%, #b48508 45%, #2c8a7a 72%, #1f7a46 100%);
+  border: 1px solid rgba(255,255,255,0.45);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+.gtColorbar::after {
+  content: "toxic ←  selectivity  → safe";
+  position: absolute; left: 0; right: 0; bottom: 16px;
+  font-size: 9.5px; color: #e8edf4; text-align: center; white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+}
+
+.gtSide { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }
+.gtControls { display: flex; flex-direction: column; gap: 8px; }
+.gtField { display: flex; flex-direction: column; gap: 4px; }
+.gtField label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.gtField select {
+  width: 100%; padding: 6px 8px; border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm); background: var(--surface); color: var(--ink);
+  font-family: var(--font-sans); font-size: 13px;
+}
+.gtSource { font-size: 11px; color: var(--subtle); font-style: italic; }
+.gtBtns { display: flex; flex-wrap: wrap; gap: 6px; }
+.gtBtns button, .gtFilePick {
+  font-size: 12px; padding: 5px 9px; border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm); background: var(--surface-2); color: var(--ink-2);
+  cursor: pointer; font-family: var(--font-sans);
+}
+.gtBtns button:hover, .gtFilePick:hover { background: var(--surface-3); }
+.gtPasteWrap { font-size: 11.5px; color: var(--muted); }
+.gtPasteWrap textarea {
+  width: 100%; min-height: 90px; margin: 6px 0; resize: vertical;
+  border: 1px solid var(--line-2); border-radius: var(--radius-sm);
+  font-family: var(--font-mono); font-size: 11px; padding: 6px;
+}
+.gtPasteWrap button {
+  font-size: 12px; padding: 4px 10px; border: 1px solid var(--accent);
+  background: var(--accent); color: #fff; border-radius: var(--radius-sm); cursor: pointer;
+}
+
+.gtLegend { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+.gtLegendRow { display: flex; align-items: center; gap: 7px; }
+.gtSwatch { width: 13px; height: 13px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,0.15); }
+.gtSwatchHi { background: #1f7a46; }
+.gtSwatchTox { background: #a3261e; }
+.gtSwatchLo { background: #3a4a5e; }
+
+.gtTableWrap { flex: 1; min-height: 80px; overflow: auto; border: 1px solid var(--line); border-radius: var(--radius-sm); }
+.gtTable { width: 100%; border-collapse: collapse; font-size: 11.5px; font-family: var(--font-mono); }
+.gtTable th, .gtTable td { padding: 4px 7px; text-align: right; border-bottom: 1px solid var(--line); }
+.gtTable th:first-child, .gtTable td:first-child { text-align: left; }
+.gtTable thead th {
+  position: sticky; top: 0; background: var(--surface-2); color: var(--muted);
+  text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; z-index: 1;
+}
+.gtTable tbody tr:hover { background: var(--surface-2); }
+.gtDot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+
+.gtExport {
+  font-size: 12px; padding: 7px 10px; border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm); background: var(--surface-2); color: var(--ink-2); cursor: pointer;
+}
+.gtExport:hover { background: var(--surface-3); }
+
+body[data-theme="dark"] .gtCanvasWrap { background: #06101c; }
+
+@media (max-width: 860px) {
+  .gtBody { grid-template-columns: 1fr; overflow: auto; }
+  .gtSide { max-height: none; }
+}
