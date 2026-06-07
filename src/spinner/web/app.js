@@ -89,6 +89,7 @@ const els = {
   resultEdges: document.getElementById("resultEdgesBtn"),
   resultNodes: document.getElementById("resultNodesBtn"),
   outputGeneterrain: document.getElementById("outputGeneterrainBtn"),
+  openGeneterrain: document.getElementById("openGeneterrainBtn"),
   chatLog: document.getElementById("chatLog"),
   chatInput: document.getElementById("chatInput"),
   chatApply: document.getElementById("chatApplyBtn"),
@@ -1776,6 +1777,37 @@ function outputGeneterrainNetwork() {
   addChatMessage("agent", "Exported the visible network as a Geneterrain-ready TSV.");
 }
 
+// Hand the current WINNER node scores (network leverage only — no expression)
+// to GeneTerrain's drug-target map via its self-contained embedded deep-link:
+//   <base>/?view=targets#net=<base64 gene\tscore TSV>
+// The base URL is asked once and remembered in localStorage.
+function openInGeneterrain() {
+  if (!state.data || !state.data.nodes || !state.data.nodes.length) {
+    addChatMessage("agent", "Generate or analyze a network first, then hand it off to GeneTerrain.");
+    return;
+  }
+  const lines = ["gene\tscore"];
+  state.data.nodes.forEach((n) => {
+    const score = Number(n.winner);
+    if (Number.isFinite(score)) lines.push(`${n.id}\t${score}`);
+  });
+  let b64;
+  try { b64 = btoa(unescape(encodeURIComponent(lines.join("\n")))); }
+  catch (_e) { b64 = btoa(lines.join("\n")); }
+
+  let base = "";
+  try { base = window.localStorage.getItem("geneterrainBase") || ""; } catch (_e) { /* ignore */ }
+  if (!base) {
+    base = window.prompt("GeneTerrain base URL (e.g. http://127.0.0.1:5176)", "http://127.0.0.1:5176") || "";
+    base = base.trim().replace(/\/+$/, "");
+    if (!base) return;
+    try { window.localStorage.setItem("geneterrainBase", base); } catch (_e) { /* ignore */ }
+  }
+  const url = `${base}/?view=targets#net=${b64}`;
+  window.open(url, "_blank", "noopener");
+  addChatMessage("agent", `Opened GeneTerrain with ${lines.length - 1} WINNER node scores as the network-leverage layer. Load a SIGnature matrix there to score drug targets. (Reset the GeneTerrain URL by clearing localStorage 'geneterrainBase'.)`);
+}
+
 function outputNotionReport() {
   exportMarkdown();
   addChatMessage("agent", "Exported a Notion-ready Markdown report.");
@@ -2087,6 +2119,7 @@ els.generateGeneterrain.addEventListener("click", makeGeneterrain);
 els.resultEdges.addEventListener("click", () => setResultTab("edges", { focus: true }));
 els.resultNodes.addEventListener("click", () => setResultTab("nodes", { focus: true }));
 els.outputGeneterrain.addEventListener("click", outputGeneterrainNetwork);
+if (els.openGeneterrain) els.openGeneterrain.addEventListener("click", openInGeneterrain);
 const tidyLayoutBtn = document.getElementById("tidyLayoutBtn");
 if (tidyLayoutBtn) {
   tidyLayoutBtn.addEventListener("click", () => {

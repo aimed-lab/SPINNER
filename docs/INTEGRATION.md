@@ -281,6 +281,28 @@ error — that path returns `200` with warnings as above.
 
 ---
 
+## 3. Hand off to GeneTerrain (drug-target map)
+
+SPINNER stays **network-only**; gene-expression / attribution scoring lives in
+the separate **GeneTerrain** app (GTKM). The **Export → "Open in GeneTerrain"**
+button bridges them: it serializes the current **WINNER node scores** (the
+network-leverage / potency layer) and opens GeneTerrain's Targets view with the
+data embedded in the URL fragment — no hosting required:
+
+```
+<geneterrain-base>/?view=targets#net=<base64 of "gene\tscore" TSV>
+```
+
+GeneTerrain then fuses that leverage layer with a **SIGnature** gene-importance
+matrix (loaded there) to rank drug targets by potency × importance × cross-cell
+selectivity. The GeneTerrain base URL is asked once and remembered in
+`localStorage` (`geneterrainBase`). The same `#net=` / `?net=` contract is
+agent-operable — a tool can assemble the URL directly from `/api/analyze`
+output. This keeps expression data out of SPINNER while making the two tools
+compose for either a human (button) or an agent (URL).
+
+---
+
 ## Endpoint summary
 
 | Method | Path | Purpose |
