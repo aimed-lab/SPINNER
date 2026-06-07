@@ -2045,10 +2045,22 @@ body.sidebarCollapsed .navItem.navAction::before { left: 4px; right: 4px; }
 .resultsToolBtn:hover { background: var(--surface-3); color: var(--ink); }
 
 /* Collapsed: only the header bar shows; table + resize handle hidden. */
-.workbench.results-collapsed { grid-template-rows: minmax(360px, 1fr) 0 auto; }
+/* Collapsed: the panel becomes a fixed bar pinned to the viewport bottom, so it
+   is ALWAYS visible and clickable regardless of workbench height / overflow.
+   The workbench drops its results row and reserves bottom padding so the canvas
+   isn't hidden behind the bar. */
+.workbench.results-collapsed { grid-template-rows: minmax(220px, 1fr) 0 0; padding-bottom: 50px; }
 .workbench.results-collapsed > #resultsResizeHandle { display: none; }
+.resultsPanel.collapsed {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 46px;
+  z-index: 50; cursor: pointer;
+  border-top: 1px solid var(--line-2);
+  box-shadow: 0 -3px 12px rgba(15, 21, 28, 0.14);
+}
 .resultsPanel.collapsed .tabPanel { display: none; }
 .resultsPanel.collapsed #resultsCollapseBtn { transform: rotate(180deg); }
+/* "click to expand" cue on the collapsed bar */
+.resultsPanel.collapsed .resultsCount::after { content: " · click to expand"; color: var(--accent); }
 
 /* Maximized: results dominates; canvas shrinks to a strip. */
 .workbench.results-maximized { grid-template-rows: minmax(150px, 0.32fr) 6px minmax(320px, 1fr); }
