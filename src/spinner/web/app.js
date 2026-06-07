@@ -1983,7 +1983,10 @@ function isLocalUiCommand(text) {
   // contain a UI keyword ("analyze this network and rank targets…").
   const t = text.trim().toLowerCase();
   if (t.length > 60 || t.includes("?") || t.split(/\s+/).length > 8) return false;
-  return /^(show|top|set|use|plan|route|trip|generate|geneterrain|analyze|rescore|filter|layout|dema|force|organic|wiper1|wiper2|raw)\b/.test(t)
+  // "analyze", "geneterrain", "rescore" intentionally NOT here — those read as
+  // analysis / drug-target / cross-tool intent and belong to the copilot (which
+  // can also explain and rank). Only pure UI toggles / routing stay local.
+  return /^(show|top|set|use|plan|route|trip|generate|filter|layout|dema|force|organic|wiper1|wiper2)\b/.test(t)
     || /\btop\s+\d+\b/.test(t) || /\d+\s*%/.test(t) || /\d+\s+(nodes?|edges?|iterations?)\b/.test(t);
 }
 
@@ -2001,11 +2004,17 @@ async function runCopilot(text) {
   let bubble = null;
   let removedThinking = false;
   const dropThinking = () => { if (thinking && !removedThinking) { thinking.remove(); removedThinking = true; } };
+  // Give the copilot the network currently loaded in the UI, so "analyze the
+  // network / this network / the current network" operates on what's on screen.
+  const edges = ((els.edgeText && els.edgeText.value) || "").trim();
+  const message = edges
+    ? `[Currently loaded SPINNER network — when I refer to "the network", "this network", or "the current network", call spinner_analyze with exactly these edges:\n${edges}\n]\n\n${text}`
+    : text;
   try {
     const resp = await fetch(`${AGENT_BASE}/agent/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: AGENT_SESSION, message: text }),
+      body: JSON.stringify({ session_id: AGENT_SESSION, message }),
     });
     if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
     const reader = resp.body.getReader();
