@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.131 — 2026-06-07
+
+Copilot fix: the Assistant now operates on the **currently-loaded network**.
+
+- The Assistant sends the UI's current edge list to the agent service, so
+  "analyze the network / this network / the current network" runs
+  `spinner_analyze` on what's on screen (previously the stateless service had
+  no knowledge of the loaded graph and replied "no network analyzed yet").
+- The local-vs-copilot router no longer treats `analyze` / `geneterrain` /
+  `rescore` as local UI commands — those reach the copilot; pure UI toggles
+  and routing stay local.
+
 ## 1.130 — 2026-06-07
 
 Assistant copilot. The Assistant drawer can now drive the full
