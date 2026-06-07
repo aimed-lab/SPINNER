@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.120 — 2026-06-07
+
+GeneTerrain interoperability. SPINNER remains network-only; this release adds
+a one-click bridge to the standalone GeneTerrain (GTKM) drug-target map.
+
+### Open in GeneTerrain (`app.js`, `index.html`)
+- New **Export → "Open in GeneTerrain"** button: serializes the current WINNER
+  node scores (the network-leverage / potency layer) as a `gene\tscore` TSV,
+  base64-encodes it, and opens GeneTerrain's Targets view with the data in the
+  URL fragment — `…/?view=targets#net=<base64 TSV>` — so no hosting is needed.
+- GeneTerrain fuses that leverage layer with a SIGnature gene-importance matrix
+  to rank drug targets by potency × importance × cross-cell selectivity.
+- The GeneTerrain base URL is asked once and remembered in `localStorage`.
+- The same `#net=` / `?net=` contract is agent-operable directly from
+  `/api/analyze` output — one workflow, two front doors (human button / agent URL).
+- No expression or attribution data enters SPINNER's scoring. Documented in
+  `docs/INTEGRATION.md` §3.
+
 ## 1.110 — 2026-06-03
 
 Deep-link data loading and dense-graph robustness. Builds on the 1.100
