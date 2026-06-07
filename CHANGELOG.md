@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.132 — 2026-06-07
+
+Results table redesign for usability.
+
+- The Edges/Nodes table now scrolls **internally** within a fixed-height
+  region (default ~7 rows, sticky headers) instead of growing the page — which
+  had made it look like a 2-row table.
+- New header controls: a row-count chip (`78 / 78 edges`, `(filtered)` when a
+  filter is active), a **maximize / restore** toggle (table fills the
+  workspace, canvas shrinks to a strip), and a **collapse / expand** toggle
+  (header only). The drag-resize handle still works.
+
 ## 1.131 — 2026-06-07
 
 Copilot fix: the Assistant now operates on the **currently-loaded network**.
