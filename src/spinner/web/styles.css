@@ -64,7 +64,7 @@
   --sidebar-collapsed-width: 52px;
   --nav-square: 40px;
   --agent-width: 320px;
-  --results-height: 280px;
+  --results-height: 320px;
   --topbar-height: 56px;
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -2019,7 +2019,40 @@ body.sidebarCollapsed .navItem.navAction::before { left: 4px; right: 4px; }
   font-size: 12px;
 }
 
-.tableScroll { flex: 1; overflow: auto; }
+/* Cap the scroll region so the table always scrolls INTERNALLY (showing many
+   rows in a fixed viewport) instead of growing the page — which made it look
+   like a 2-row table. Driven by --results-height; raised when maximized. */
+.tableScroll { flex: 1; overflow: auto; max-height: var(--results-height); }
+.resultsPanel.maximized .tableScroll { max-height: calc(100vh - var(--topbar-height) - 130px); }
+
+/* ---- Results header tools: count chip + collapse / maximize ---- */
+.resultsTools { display: flex; align-items: center; gap: 8px; }
+.resultsCount {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.resultsToolBtn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 15px; line-height: 1; cursor: pointer;
+}
+.resultsToolBtn:hover { background: var(--surface-3); color: var(--ink); }
+
+/* Collapsed: only the header bar shows; table + resize handle hidden. */
+.workbench.results-collapsed { grid-template-rows: minmax(360px, 1fr) 0 auto; }
+.workbench.results-collapsed > #resultsResizeHandle { display: none; }
+.resultsPanel.collapsed .tabPanel { display: none; }
+.resultsPanel.collapsed #resultsCollapseBtn { transform: rotate(180deg); }
+
+/* Maximized: results dominates; canvas shrinks to a strip. */
+.workbench.results-maximized { grid-template-rows: minmax(150px, 0.32fr) 6px minmax(320px, 1fr); }
+.resultsPanel.maximized #resultsExpandBtn { color: var(--accent); }
 
 .tabPanel {
   min-height: 0;

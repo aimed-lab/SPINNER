@@ -418,10 +418,15 @@
               <button type="button" data-tab="edges" class="active">Edges</button>
               <button type="button" data-tab="nodes">Nodes</button>
             </div>
-            <label class="resultsFilter">
-              <span class="resultsFilterIcon" aria-hidden="true">⌕</span>
-              <input id="filterInput" type="search" placeholder="Filter rows" aria-label="Filter rows" />
-            </label>
+            <div class="resultsTools">
+              <span id="resultsCount" class="resultsCount" aria-live="polite"></span>
+              <label class="resultsFilter">
+                <span class="resultsFilterIcon" aria-hidden="true">⌕</span>
+                <input id="filterInput" type="search" placeholder="Filter rows" aria-label="Filter rows" />
+              </label>
+              <button id="resultsExpandBtn" type="button" class="resultsToolBtn" aria-label="Maximize results" title="Maximize results">⤢</button>
+              <button id="resultsCollapseBtn" type="button" class="resultsToolBtn" aria-label="Collapse results" title="Collapse results" aria-expanded="true">⌄</button>
+            </div>
           </div>
           <div class="tabPanel active" id="edgesTab">
             <div class="tableScroll">

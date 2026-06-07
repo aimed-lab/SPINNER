@@ -26,6 +26,8 @@ const state = {
   layoutMode: "force",
   generatorModel: "scale-free",
   resultTab: "edges",
+  resultsView: "default",
+  resultsCounts: { edges: [0, 0], nodes: [0, 0] },
   activeNavPanel: "input",
   sidebarCollapsed: true,
   theme: "light",
@@ -117,6 +119,10 @@ const els = {
   resultsResize: document.getElementById("resultsResizeHandle"),
   agentPanel: document.querySelector(".agentPanel"),
   resultsPanel: document.querySelector(".resultsPanel"),
+  workbench: document.querySelector(".workbench"),
+  resultsCount: document.getElementById("resultsCount"),
+  resultsCollapse: document.getElementById("resultsCollapseBtn"),
+  resultsExpand: document.getElementById("resultsExpandBtn"),
 };
 
 const narrowViewportQuery = window.matchMedia("(max-width: 760px)");
@@ -211,6 +217,9 @@ function setResultTab(tab, options = {}) {
   document.querySelectorAll(".tabPanel").forEach((panel) => {
     panel.classList.toggle("active", panel.id === `${state.resultTab}Tab`);
   });
+  // Acting on results implies they should be visible.
+  if (state.resultsView === "collapsed") setResultsView("default");
+  updateResultsCount();
   if (options.focus && els.resultsPanel) {
     els.resultsPanel.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }
@@ -1060,6 +1069,8 @@ function renderTable() {
       <td class="reason">${edgeReason(edge)}</td>`;
     els.rows.appendChild(row);
   });
+  state.resultsCounts.edges = [edges.length, state.data.edges.length];
+  updateResultsCount();
 }
 
 function renderNodesTable() {
@@ -1084,6 +1095,33 @@ function renderNodesTable() {
       <td>#${node.rank}</td>`;
     els.nodeRows.appendChild(row);
   });
+  state.resultsCounts.nodes = [nodes.length, state.data.nodes.length];
+  updateResultsCount();
+}
+
+function updateResultsCount() {
+  if (!els.resultsCount) return;
+  const [shown, total] = state.resultsCounts[state.resultTab] || [0, 0];
+  const noun = state.resultTab === "nodes" ? "nodes" : "edges";
+  const filtered = (els.filter && els.filter.value.trim()) ? ` (filtered)` : "";
+  els.resultsCount.textContent = total ? `${shown} / ${total} ${noun}${filtered}` : "";
+}
+
+// Results panel: default ↔ collapsed (header only) ↔ maximized (fills the workspace).
+function setResultsView(view) {
+  state.resultsView = view;
+  const wb = els.workbench, panel = els.resultsPanel;
+  if (wb) wb.classList.toggle("results-collapsed", view === "collapsed");
+  if (wb) wb.classList.toggle("results-maximized", view === "maximized");
+  if (panel) {
+    panel.classList.toggle("collapsed", view === "collapsed");
+    panel.classList.toggle("maximized", view === "maximized");
+  }
+  if (els.resultsCollapse) {
+    els.resultsCollapse.setAttribute("aria-expanded", view === "collapsed" ? "false" : "true");
+    els.resultsCollapse.title = view === "collapsed" ? "Expand results" : "Collapse results";
+  }
+  if (els.resultsExpand) els.resultsExpand.title = view === "maximized" ? "Restore results" : "Maximize results";
 }
 
 function renderSelected() {
@@ -2222,6 +2260,8 @@ els.resultEdges.addEventListener("click", () => setResultTab("edges", { focus: t
 els.resultNodes.addEventListener("click", () => setResultTab("nodes", { focus: true }));
 els.outputGeneterrain.addEventListener("click", outputGeneterrainNetwork);
 if (els.openGeneterrain) els.openGeneterrain.addEventListener("click", openInGeneterrain);
+if (els.resultsCollapse) els.resultsCollapse.addEventListener("click", () => setResultsView(state.resultsView === "collapsed" ? "default" : "collapsed"));
+if (els.resultsExpand) els.resultsExpand.addEventListener("click", () => setResultsView(state.resultsView === "maximized" ? "default" : "maximized"));
 const tidyLayoutBtn = document.getElementById("tidyLayoutBtn");
 if (tidyLayoutBtn) {
   tidyLayoutBtn.addEventListener("click", () => {
