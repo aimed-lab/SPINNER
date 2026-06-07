@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.130 — 2026-06-07
+
+Assistant copilot. The Assistant drawer can now drive the full
+SPINNER → GeneTerrain drug-target workflow via a shared LLM agent service.
+
+### Assistant copilot (`app.js`, `index.html`, `styles.css`)
+- Free-form requests ("analyze this network and rank monocyte drug targets,
+  then give me a GeneTerrain link") stream to a shared agent service
+  (Grok-backed; default `http://127.0.0.1:8088`, override via `?agent=` or
+  `localStorage.agentBase`). Tool activity renders as compact notes; a
+  GeneTerrain target-map link renders as a clickable result.
+- Direct, terse UI commands (WIPER1/2, top N, layout, plan trip, generate,
+  geneterrain, analyze) still run **locally and instantly** — the router only
+  sends sentence-like requests to the copilot.
+- Graceful in-panel notice if the service is unreachable.
+- **SPINNER stays network-only**: the LLM and the API key live entirely in the
+  shared agent service, never in SPINNER. See the
+  [spinner-agent-console](https://github.com/aimed-lab/spinner-agent-console)
+  repo for that service.
+
 ## 1.120 — 2026-06-07
 
 GeneTerrain interoperability. SPINNER remains network-only; this release adds

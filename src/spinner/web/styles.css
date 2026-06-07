@@ -1526,6 +1526,23 @@ body.assistantOpen .assistantDrawer { transform: translateX(0); }
   color: var(--accent);
 }
 
+/* Copilot tool-activity note + result link */
+.chatMessage.toolnote {
+  border-left-color: var(--accent-soft);
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 5px 9px;
+}
+.chatMessage.toolnote::before { content: none; }
+.chatMessage.chatLink a {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+.chatMessage.chatLink a:hover { text-decoration: underline; }
+
 /* ===================== DIRECTIONS CARD (map overlay) ===================== */
 
 .directionsCard {
