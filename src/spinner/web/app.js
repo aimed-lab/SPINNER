@@ -1978,9 +1978,13 @@ const AGENT_BASE = (() => {
 const AGENT_SESSION = "spinner-" + Math.floor((Date.now ? Date.now() : 0) % 1e9).toString(36);
 
 function isLocalUiCommand(text) {
-  const t = text.toLowerCase();
-  return /\b(wiper1|wiper2|raw|threshold|dema|force|organic|plan|route|trip|generate|geneterrain|analyze|rescore|novel|log|linear|normal|ufc|weight)\b/.test(t)
-    || /top\s+\d+/.test(t) || /\d+\s*%/.test(t) || /\d+\s+(nodes?|edges?|iterations?)/.test(t);
+  // Only terse, imperative commands run locally. Anything sentence-like — long,
+  // a question, or multi-clause — goes to the copilot, even if it happens to
+  // contain a UI keyword ("analyze this network and rank targets…").
+  const t = text.trim().toLowerCase();
+  if (t.length > 60 || t.includes("?") || t.split(/\s+/).length > 8) return false;
+  return /^(show|top|set|use|plan|route|trip|generate|geneterrain|analyze|rescore|filter|layout|dema|force|organic|wiper1|wiper2|raw)\b/.test(t)
+    || /\btop\s+\d+\b/.test(t) || /\d+\s*%/.test(t) || /\d+\s+(nodes?|edges?|iterations?)\b/.test(t);
 }
 
 function applyChatInstruction() {
