@@ -1867,10 +1867,25 @@ function exportFigure() {
 }
 
 function addChatMessage(role, text) {
-  if (!els.chatLog) return;
+  if (!els.chatLog) return null;
   const div = document.createElement("div");
   div.className = `chatMessage ${role}`;
   div.textContent = text;
+  els.chatLog.appendChild(div);
+  els.chatLog.scrollTop = els.chatLog.scrollHeight;
+  return div;
+}
+
+function addChatLink(label, url) {
+  if (!els.chatLog) return;
+  const div = document.createElement("div");
+  div.className = "chatMessage agent chatLink";
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.textContent = label;
+  div.appendChild(a);
   els.chatLog.appendChild(div);
   els.chatLog.scrollTop = els.chatLog.scrollHeight;
 }
@@ -1949,10 +1964,85 @@ function setupResizablePanels() {
   });
 }
 
+// ===================== ASSISTANT COPILOT (shared Grok agent service) =====================
+// Direct UI commands stay local (instant, offline). Free-form requests —
+// "analyze this network and rank monocyte drug targets", etc. — go to the
+// shared agent service (Grok), which orchestrates SPINNER + GeneTerrain.
+const AGENT_BASE = (() => {
+  try {
+    const q = new URLSearchParams(location.search).get("agent");
+    if (q) { localStorage.setItem("agentBase", q); return q.replace(/\/+$/, ""); }
+    return (localStorage.getItem("agentBase") || "http://127.0.0.1:8088").replace(/\/+$/, "");
+  } catch (_e) { return "http://127.0.0.1:8088"; }
+})();
+const AGENT_SESSION = "spinner-" + Math.floor((Date.now ? Date.now() : 0) % 1e9).toString(36);
+
+function isLocalUiCommand(text) {
+  const t = text.toLowerCase();
+  return /\b(wiper1|wiper2|raw|threshold|dema|force|organic|plan|route|trip|generate|geneterrain|analyze|rescore|novel|log|linear|normal|ufc|weight)\b/.test(t)
+    || /top\s+\d+/.test(t) || /\d+\s*%/.test(t) || /\d+\s+(nodes?|edges?|iterations?)/.test(t);
+}
+
 function applyChatInstruction() {
   const text = (els.chatInput.value || "").trim();
   if (!text) return;
   addChatMessage("user", text);
+  els.chatInput.value = "";
+  if (isLocalUiCommand(text)) { runLocalCommand(text); return; }
+  runCopilot(text);
+}
+
+async function runCopilot(text) {
+  const thinking = addChatMessage("agent", "…");
+  let bubble = null;
+  let removedThinking = false;
+  const dropThinking = () => { if (thinking && !removedThinking) { thinking.remove(); removedThinking = true; } };
+  try {
+    const resp = await fetch(`${AGENT_BASE}/agent/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: AGENT_SESSION, message: text }),
+    });
+    if (!resp.ok || !resp.body) throw new Error("HTTP " + resp.status);
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split("\n\n");
+      buf = parts.pop();
+      for (const p of parts) {
+        const line = p.replace(/^data: /, "").trim();
+        if (!line) continue;
+        let ev; try { ev = JSON.parse(line); } catch { continue; }
+        if (ev.type === "text") {
+          dropThinking();
+          if (!bubble) bubble = addChatMessage("agent", "");
+          bubble.textContent += ev.text;
+          els.chatLog.scrollTop = els.chatLog.scrollHeight;
+        } else if (ev.type === "tool_use") {
+          dropThinking();
+          addChatMessage("toolnote", `⚙ ${ev.name}…`);
+          bubble = null;
+        } else if (ev.type === "link" && ev.url) {
+          addChatLink("Open drug-target landscape in GeneTerrain ↗", ev.url);
+          bubble = null;
+        } else if (ev.type === "error") {
+          dropThinking();
+          addChatMessage("agent", "Copilot: " + ev.message);
+        }
+      }
+    }
+    dropThinking();
+  } catch (e) {
+    dropThinking();
+    addChatMessage("agent", `Copilot unavailable at ${AGENT_BASE} (${e.message}). Start the agent service (run.sh) — or use a direct command like "top 10 WIPER2 edges".`);
+  }
+}
+
+function runLocalCommand(text) {
   const lower = text.toLowerCase();
   const notes = [];
 
@@ -2052,7 +2142,6 @@ function applyChatInstruction() {
     render();
     addChatMessage("agent", notes.length ? `Applied: ${notes.join("; ")}.` : "I can adjust scoring, filters, generator size, scale, and analysis settings from short commands.");
   }
-  els.chatInput.value = "";
 }
 
 function bindSegments(id, stateKey, dataKey) {
