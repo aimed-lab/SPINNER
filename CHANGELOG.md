@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.133 — 2026-06-07
+
+Fix: collapsing the results table left no way to restore it (the collapsed row
+shrank to ~2px and the header was clipped/off-screen). The collapsed state is
+now a fixed bar pinned to the viewport bottom — always visible, labeled
+`N / N edges · click to expand`, and restored by clicking anywhere on it (or
+the chevron). The workbench reserves bottom padding so the canvas isn't hidden
+behind the bar.
+
 ## 1.132 — 2026-06-07
 
 Results table redesign for usability.
