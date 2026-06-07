@@ -2260,8 +2260,10 @@ els.resultEdges.addEventListener("click", () => setResultTab("edges", { focus: t
 els.resultNodes.addEventListener("click", () => setResultTab("nodes", { focus: true }));
 els.outputGeneterrain.addEventListener("click", outputGeneterrainNetwork);
 if (els.openGeneterrain) els.openGeneterrain.addEventListener("click", openInGeneterrain);
-if (els.resultsCollapse) els.resultsCollapse.addEventListener("click", () => setResultsView(state.resultsView === "collapsed" ? "default" : "collapsed"));
-if (els.resultsExpand) els.resultsExpand.addEventListener("click", () => setResultsView(state.resultsView === "maximized" ? "default" : "maximized"));
+if (els.resultsCollapse) els.resultsCollapse.addEventListener("click", (e) => { e.stopPropagation(); setResultsView(state.resultsView === "collapsed" ? "default" : "collapsed"); });
+if (els.resultsExpand) els.resultsExpand.addEventListener("click", (e) => { e.stopPropagation(); setResultsView(state.resultsView === "maximized" ? "default" : "maximized"); });
+// When collapsed, a click anywhere on the slim bar expands it back.
+if (els.resultsPanel) els.resultsPanel.addEventListener("click", () => { if (state.resultsView === "collapsed") setResultsView("default"); });
 const tidyLayoutBtn = document.getElementById("tidyLayoutBtn");
 if (tidyLayoutBtn) {
   tidyLayoutBtn.addEventListener("click", () => {
