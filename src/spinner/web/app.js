@@ -2038,10 +2038,14 @@ function applyChatInstruction() {
 }
 
 async function runCopilot(text) {
-  const thinking = addChatMessage("agent", "…");
+  // One persistent "head" bubble shows the typing indicator, then is reused
+  // in place for the first text / tool note / error — no add-then-remove
+  // churn, so the panel never flickers on a fast response or a failure.
+  const head = addChatMessage("agent", "…");
+  head.classList.add("thinking");
+  let headUsed = false;
   let bubble = null;
-  let removedThinking = false;
-  const dropThinking = () => { if (thinking && !removedThinking) { thinking.remove(); removedThinking = true; } };
+  const useHead = (cls, txt) => { head.className = `chatMessage ${cls}`; head.textContent = txt; headUsed = true; return head; };
   // Give the copilot the network currently loaded in the UI, so "analyze the
   // network / this network / the current network" operates on what's on screen.
   const edges = ((els.edgeText && els.edgeText.value) || "").trim();
@@ -2069,27 +2073,27 @@ async function runCopilot(text) {
         if (!line) continue;
         let ev; try { ev = JSON.parse(line); } catch { continue; }
         if (ev.type === "text") {
-          dropThinking();
-          if (!bubble) bubble = addChatMessage("agent", "");
+          if (!bubble) bubble = headUsed ? addChatMessage("agent", "") : useHead("agent", "");
           bubble.textContent += ev.text;
           els.chatLog.scrollTop = els.chatLog.scrollHeight;
         } else if (ev.type === "tool_use") {
-          dropThinking();
-          addChatMessage("toolnote", `⚙ ${ev.name}…`);
+          if (!headUsed) useHead("toolnote", `⚙ ${ev.name}…`);
+          else addChatMessage("toolnote", `⚙ ${ev.name}…`);
           bubble = null;
         } else if (ev.type === "link" && ev.url) {
+          if (!headUsed) { head.remove(); headUsed = true; }
           addChatLink("Open drug-target landscape in GeneTerrain ↗", ev.url);
           bubble = null;
         } else if (ev.type === "error") {
-          dropThinking();
-          addChatMessage("agent", "Copilot: " + ev.message);
+          if (!headUsed) useHead("agent", "Copilot: " + ev.message);
+          else addChatMessage("agent", "Copilot: " + ev.message);
         }
       }
     }
-    dropThinking();
+    if (!headUsed) head.remove(); // stream ended with nothing to show
   } catch (e) {
-    dropThinking();
-    addChatMessage("agent", `Copilot unavailable at ${AGENT_BASE} (${e.message}). Start the agent service (run.sh) — or use a direct command like "top 10 WIPER2 edges".`);
+    const msg = `Copilot unavailable at ${AGENT_BASE} (${e.message}). Start the agent service (run.sh) — or use a direct command like "top 10 WIPER2 edges".`;
+    if (!headUsed) useHead("agent", msg); else addChatMessage("agent", msg);
   }
 }
 
