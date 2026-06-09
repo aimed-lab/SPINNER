@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.134 — 2026-06-08
+
+Assistant copilot: fix the panel flickering on open and on each reply.
+
+- **No more message churn.** A reply (or an error) used to be drawn by adding a
+  `…` placeholder bubble and then *removing* it to add the real message — a
+  visible add/remove flash, especially fast when the agent service is
+  unreachable. The placeholder is now a single persistent bubble that is
+  rewritten **in place** into the first text, tool note, or error, so the
+  message count never dips. The indicator animates via a new
+  `.chatMessage.thinking` style.
+- **Smoother drawer slide-in.** The Assistant drawer is promoted to its own
+  compositor layer (`will-change: transform`), removing the repaint flicker
+  during the open animation.
+- Unrelated to the UI, the failed-query message already points at the cause:
+  the shared agent service (`run.sh`, default `:8088`) must be running for
+  free-form requests — terse UI commands still work offline.
+
 ## 1.133 — 2026-06-07
 
 Fix: collapsing the results table left no way to restore it (the collapsed row
