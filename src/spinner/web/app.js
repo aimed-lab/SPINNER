@@ -2038,10 +2038,14 @@ function applyChatInstruction() {
 }
 
 async function runCopilot(text) {
-  const thinking = addChatMessage("agent", "…");
+  // One persistent "head" bubble shows the typing indicator, then is reused
+  // in place for the first text / tool note / error — no add-then-remove
+  // churn, so the panel never flickers on a fast response or a failure.
+  const head = addChatMessage("agent", "…");
+  head.classList.add("thinking");
+  let headUsed = false;
   let bubble = null;
-  let removedThinking = false;
-  const dropThinking = () => { if (thinking && !removedThinking) { thinking.remove(); removedThinking = true; } };
+  const useHead = (cls, txt) => { head.className = `chatMessage ${cls}`; head.textContent = txt; headUsed = true; return head; };
   // Give the copilot the network currently loaded in the UI, so "analyze the
   // network / this network / the current network" operates on what's on screen.
   const edges = ((els.edgeText && els.edgeText.value) || "").trim();
@@ -2069,28 +2073,85 @@ async function runCopilot(text) {
         if (!line) continue;
         let ev; try { ev = JSON.parse(line); } catch { continue; }
         if (ev.type === "text") {
-          dropThinking();
-          if (!bubble) bubble = addChatMessage("agent", "");
+          if (!bubble) bubble = headUsed ? addChatMessage("agent", "") : useHead("agent", "");
           bubble.textContent += ev.text;
           els.chatLog.scrollTop = els.chatLog.scrollHeight;
         } else if (ev.type === "tool_use") {
-          dropThinking();
-          addChatMessage("toolnote", `⚙ ${ev.name}…`);
+          if (!headUsed) useHead("toolnote", `⚙ ${ev.name}…`);
+          else addChatMessage("toolnote", `⚙ ${ev.name}…`);
           bubble = null;
         } else if (ev.type === "link" && ev.url) {
+          if (!headUsed) { head.remove(); headUsed = true; }
           addChatLink("Open drug-target landscape in GeneTerrain ↗", ev.url);
           bubble = null;
         } else if (ev.type === "error") {
-          dropThinking();
-          addChatMessage("agent", "Copilot: " + ev.message);
+          if (!headUsed) useHead("agent", "Copilot: " + ev.message);
+          else addChatMessage("agent", "Copilot: " + ev.message);
         }
       }
     }
-    dropThinking();
+    if (!headUsed) head.remove(); // stream ended with nothing to show
   } catch (e) {
-    dropThinking();
-    addChatMessage("agent", `Copilot unavailable at ${AGENT_BASE} (${e.message}). Start the agent service (run.sh) — or use a direct command like "top 10 WIPER2 edges".`);
+    // Agent service unreachable — fall back to SPINNER's own engines for any
+    // network-analysis request (network-only, no key, no LLM). The "…" head
+    // stays up as a working indicator while the local run completes.
+    const handled = await localAnalysisFallback(text);
+    if (handled) {
+      if (!headUsed) head.remove();
+    } else {
+      const msg = `Copilot unavailable at ${AGENT_BASE} (${e.message}). Start the agent service (run.sh) — or use a direct command like "top 10 WIPER2 edges".`;
+      if (!headUsed) useHead("agent", msg); else addChatMessage("agent", msg);
+    }
   }
+}
+
+// Offline fallback: when the LLM agent service is down, still answer
+// network-analysis requests ("analyze / rank / top hubs / important nodes")
+// using SPINNER's own WIPER/WINNER engines. Network-only — no expression,
+// no API key, no LLM. Drug-target ranking still needs the agent service.
+async function localAnalysisFallback(text) {
+  const t = text.toLowerCase();
+  if (!/(analy|rank|target|score|winner|wiper|hub|central|important|leverage|degree|top\b|network)/.test(t)) return false;
+  let data = (state.data && Array.isArray(state.data.nodes) && state.data.nodes.length) ? state.data : null;
+  const edges = ((els.edgeText && els.edgeText.value) || "").trim();
+  if (data) {
+    addChatMessage("toolnote", "↺ agent service offline — summarizing the current SPINNER network locally");
+  } else {
+    if (!edges) return false;
+    addChatMessage("toolnote", "↺ agent service offline — running SPINNER locally");
+    try {
+      const r = await fetch(apiUrl("/api/analyze"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: edges,
+          iterations: Number(els.iterations && els.iterations.value) || 80,
+          device: (els.device && els.device.value) || "cpu",
+          includeNovel: !!(els.includeNovel && els.includeNovel.checked),
+        }),
+      });
+      if (!r.ok) return false;
+      data = await r.json();
+    } catch (_e) { return false; }
+  }
+  if (!data || !Array.isArray(data.nodes) || !data.nodes.length) return false;
+  const m = t.match(/top\s+(\d+)/);
+  const N = Math.max(3, Math.min(25, m ? parseInt(m[1], 10) : 10));
+  const f = (x) => (typeof x === "number" ? x.toFixed(3) : "-");
+  const nodes = data.nodes.slice().sort((a, b) => (a.rank || 1e9) - (b.rank || 1e9)).slice(0, N);
+  const w2 = (data.edges || []).filter((e) => e.wiper2 && typeof e.wiper2.score === "number")
+    .sort((a, b) => (a.wiper2.rank || 1e9) - (b.wiper2.rank || 1e9)).slice(0, N);
+  let out = `SPINNER (local, network-only) — top ${nodes.length} nodes by WINNER leverage:\n`;
+  out += nodes.map((n) => `  ${n.rank}. ${n.id} — WINNER ${f(n.winner)} (deg ${n.degree})`).join("\n");
+  if (w2.length) {
+    out += `\n\nTop ${w2.length} edges by WIPER2:\n`;
+    out += w2.map((e) => `  ${e.wiper2.rank}. ${e.source}–${e.target} — W2 ${f(e.wiper2.score)}`).join("\n");
+  }
+  const warns = (data.summary && data.summary.warnings) || [];
+  if (warns.length) out += `\n\nWarnings: ${warns.join("; ")}`;
+  out += `\n\nThis is network leverage only. Drug-target ranking (gene importance × cross-cell selectivity) needs the agent service + GeneTerrain — start run.sh to enable it.`;
+  addChatMessage("agent", out);
+  return true;
 }
 
 function runLocalCommand(text) {
