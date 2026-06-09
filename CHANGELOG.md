@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.135 — 2026-06-09
+
+Assistant copilot: offline fallback so queries still work when the shared
+agent service is down.
+
+- A free-form **network-analysis** request ("analyze the network", "rank the
+  top hubs", "top 5 important nodes") used to just error if the agent service
+  (`:8088`) was unreachable. It now falls back to SPINNER's **own** WIPER /
+  WINNER engines: it summarizes the on-screen results, or re-runs
+  `POST /api/analyze` on the current edge list, and returns the top nodes by
+  WINNER leverage plus the top WIPER2 edges. A `↺ agent service offline` note
+  marks the local run, and `top N` is honored.
+- **Stays network-only** — the fallback uses no expression data, no API key,
+  and no LLM. Drug-target ranking (importance × cross-cell selectivity) still
+  requires the agent service + GeneTerrain; the reply says so.
+- Non-analysis requests still show the "start `run.sh`" notice.
+
 ## 1.134 — 2026-06-08
 
 Assistant copilot: fix the panel flickering on open and on each reply.
