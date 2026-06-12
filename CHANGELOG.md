@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.139 — 2026-06-11
+
+Fix: `http://localhost:<port>` served a blank page.
+
+- The server bound IPv4 `127.0.0.1` only, but `localhost` often resolves to
+  IPv6 `::1` first (notably on macOS), so a `localhost` tab got
+  connection-refused and rendered nothing — only `127.0.0.1` worked.
+- The server now binds **both** loopback families (`127.0.0.1` and `::1`) by
+  default, so `localhost` works regardless of resolution. It stays
+  **loopback-only** (no LAN exposure) and falls back to IPv4 alone if IPv6 is
+  unavailable. Non-loopback `--host` values bind once, unchanged.
+
 ## 1.138 — 2026-06-11
 
 Left **size dock** — legends and their controllers, off the canvas.
