@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import socket
 import sys
 import threading
 from http import HTTPStatus
@@ -362,6 +363,10 @@ def _raise_recursion_headroom() -> None:
         pass
 
 
+class _HTTPServerV6(ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
 def main(argv: list[str] | None = None) -> int:
     _raise_recursion_headroom()
     parser = argparse.ArgumentParser(description="Run the local SPINNER web explorer")
@@ -369,14 +374,41 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", type=int, default=8765, help="Bind port")
     args = parser.parse_args(argv)
 
-    server = ThreadingHTTPServer((args.host, args.port), WiperWebHandler)
-    print(f"Serving SPINNER web explorer at http://{args.host}:{args.port}")
+    # For loopback, bind BOTH IPv4 127.0.0.1 and IPv6 ::1 so that
+    # http://localhost works regardless of how the OS resolves it (macOS prefers
+    # ::1, and an IPv4-only bind would refuse that connection → a blank page).
+    # Loopback-only: no LAN exposure. Any explicit non-loopback host binds once.
+    loopback = {"127.0.0.1", "localhost", "::1", ""}
+    if args.host in loopback:
+        binds = [(ThreadingHTTPServer, "127.0.0.1"), (_HTTPServerV6, "::1")]
+    else:
+        binds = [(ThreadingHTTPServer, args.host)]
+
+    servers = []
+    for cls, addr in binds:
+        try:
+            servers.append(cls((addr, args.port), WiperWebHandler))
+        except OSError as exc:  # e.g. IPv6 unavailable on this host
+            print(f"  (skipped {addr}:{args.port} — {exc})")
+    if not servers:
+        print(f"Failed to bind {args.host}:{args.port}")
+        return 1
+
+    shown = "127.0.0.1" if args.host in loopback else args.host
+    print(f"Serving SPINNER web explorer at http://{shown}:{args.port}")
+    if args.host in loopback and len(servers) > 1:
+        print(f"  (also http://localhost:{args.port})")
+
+    # Serve every bound socket; extras on daemon threads, the first inline.
+    for extra in servers[1:]:
+        threading.Thread(target=extra.serve_forever, daemon=True).start()
     try:
-        server.serve_forever()
+        servers[0].serve_forever()
     except KeyboardInterrupt:
         return 130
     finally:
-        server.server_close()
+        for srv in servers:
+            srv.server_close()
     return 0
 
 
