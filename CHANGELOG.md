@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.136 — 2026-06-11
+
+Two explorer readability features (Network Display settings).
+
+### Node size ratio + zoom-steady sizing
+- New **ratio** slider (1–100) under *Node radius* sets the largest-to-smallest
+  display ratio directly: the smallest node holds the `min` radius and the
+  largest is `min × ratio`. (Replaces the old `×fold` field; relative mode.)
+- Node glyph sizes now stay **visually steady as you zoom** — radii, edge
+  stroke widths, and labels are counter-scaled by `1/zoom`, so zooming changes
+  only spacing, not marker/label sizes. At fit (zoom = 1) rendering is
+  unchanged. The `min`/`max` px inputs apply in Absolute mode; the ratio slider
+  in Relative mode (controls auto-show per mode).
+
+### Off-screen culling (declutter)
+- New **Declutter** toggle (on by default): when zoomed in, any node whose
+  **center** falls outside the viewport is hidden, along with every edge that
+  touches it — cutting edge clutter. At fit / zoomed-out the viewport covers the
+  whole graph, so nothing is culled. Recomputed on every pan/zoom.
+
 ## 1.135 — 2026-06-09
 
 Assistant copilot: offline fallback so queries still work when the shared
