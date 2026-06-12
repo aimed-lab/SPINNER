@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.141 — 2026-06-11
+
+Map-first default view + fill the canvas to the bottom.
+
+- **Results table collapsed by default.** The explorer now boots map-first —
+  the Edges/Nodes table starts collapsed to its bottom bar (`click to expand`),
+  giving the network the full height. Expanding/maximizing still works as
+  before.
+- **No more bottom dead band.** The layout reserved a 56px topbar height that
+  this (topbarless) layout never renders, so the sidebar and canvas stopped
+  short of the viewport bottom. The workspace now fills the full height, and
+  the collapsed-results reserve was trimmed to match the fixed bar — the canvas
+  meets the results bar flush and the left rail extends all the way down.
+
 ## 1.140 — 2026-06-11
 
 Fix: ~30s blank canvas on the first analysis after a cold start.
