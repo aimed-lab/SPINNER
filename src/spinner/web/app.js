@@ -64,6 +64,7 @@ const els = {
   tooltip: document.getElementById("graphTooltip"),
   sizeLegend: document.getElementById("sizeLegend"),
   edgeLegend: document.getElementById("edgeLegend"),
+  showLegends: document.getElementById("showLegendsInput"),
   explorerSearch: document.getElementById("explorerSearchInput"),
   explorerSearchResults: document.getElementById("explorerSearchResults"),
   explorerDetails: document.getElementById("explorerDetails"),
@@ -78,7 +79,9 @@ const els = {
   nodeThreshold: document.getElementById("nodeThresholdInput"),
   nodeMinRadius: document.getElementById("nodeMinRadiusInput"),
   nodeMaxRadius: document.getElementById("nodeMaxRadiusInput"),
-  nodeRadiusFold: document.getElementById("nodeRadiusFoldInput"),
+  nodeSizeRatio: document.getElementById("nodeSizeRatioInput"),
+  nodeSizeRatioOut: document.getElementById("nodeSizeRatioOut"),
+  cullOffscreen: document.getElementById("cullOffscreenInput"),
   layoutModeSegments: document.getElementById("layoutModeSegments"),
   generatorNodeCount: document.getElementById("generatorNodeCountInput"),
   generatorEdgeCount: document.getElementById("generatorEdgeCountInput"),
@@ -368,8 +371,8 @@ function nodeRadiusBounds() {
       Math.max(minRadius + 1, Number(els.nodeMaxRadius.value) || 28),
     ];
   }
-  const fold = Math.max(1, Number(els.nodeRadiusFold.value) || 4);
-  return [minRadius, minRadius * fold];
+  const ratio = Math.max(1, Math.min(100, Number(els.nodeSizeRatio.value) || 4));
+  return [minRadius, minRadius * ratio];
 }
 
 function nodeRadius(node, minScore, maxScore) {
@@ -771,7 +774,7 @@ function ensureLayout(nodeIds, edgeIds) {
   const height = 620;
   const nodes = state.data.nodes.filter((node) => nodeIds.has(node.id));
   const edges = state.data.edges.filter((edge) => edgeIds.has(edge.id));
-  const radiusSignature = `${state.nodeScale}:${state.nodeSizeMode}:${els.nodeMinRadius.value}:${els.nodeMaxRadius.value}:${els.nodeRadiusFold.value}`;
+  const radiusSignature = `${state.nodeScale}:${state.nodeSizeMode}:${els.nodeMinRadius.value}:${els.nodeMaxRadius.value}:${els.nodeSizeRatio.value}`;
   const signature = `${state.layoutMode}|${radiusSignature}|${nodes.map((n) => n.id).join(",")}|${edges.map((e) => e.id).join(",")}`;
   if (signature === state.layoutSignature) return;
   state.layoutSignature = signature;
@@ -846,14 +849,40 @@ function drawNetwork() {
   const nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const pulseLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
   const viewport = document.createElementNS("http://www.w3.org/2000/svg", "g");
-  viewport.setAttribute("transform", `translate(${state.panX} ${state.panY}) scale(${state.zoom})`);
+  const z = state.zoom || 1;
+  viewport.setAttribute("transform", `translate(${state.panX} ${state.panY}) scale(${z})`);
   viewport.append(edgeLayer, pulseLayer, nodeLayer);
   els.svg.append(viewport);
+
+  // Feature: counter-scale all glyph sizes (radii, strokes, labels) by 1/zoom so
+  // the chosen node aesthetics stay visually steady as the user zooms — only
+  // spacing changes, not marker/edge/label sizes.
+  const sz = (px) => px / z;
+
+  // Feature: off-screen culling. The viewport shows world coords [0,900]x[0,620]
+  // (the SVG viewBox). A node whose CENTER maps outside that rect is hidden, and
+  // so are edges touching it — cutting clutter when zoomed in. At fit/zoomed-out
+  // the rect covers the whole graph, so nothing is culled.
+  const cull = !els.cullOffscreen || els.cullOffscreen.checked;
+  const wxMin = (0 - state.panX) / z, wxMax = (900 - state.panX) / z;
+  const wyMin = (0 - state.panY) / z, wyMax = (620 - state.panY) / z;
+  const centerInView = (p) => p && p.x >= wxMin && p.x <= wxMax && p.y >= wyMin && p.y <= wyMax;
+  const visible = new Set();
+  if (cull) {
+    nodes.forEach((node) => { if (centerInView(state.positions.get(node.id))) visible.add(node.id); });
+  }
+  const nodeShown = (id) => !cull || visible.has(id);
+
+  // Count what is actually drawn (after filter + culling) so the header badge
+  // reflects the current view — updated on every pan/zoom, not just on filter.
+  let drawnNodes = 0;
+  let drawnEdges = 0;
 
   edges.forEach((edge) => {
     const a = state.positions.get(edge.source);
     const b = state.positions.get(edge.target);
     if (!a || !b) return;
+    if (cull && (!visible.has(edge.source) || !visible.has(edge.target))) return;
     const t = normalize(scaledEdgeValue(edge), edgeMin, edgeMax);
     const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
     line.setAttribute("x1", a.x);
@@ -861,7 +890,7 @@ function drawNetwork() {
     line.setAttribute("x2", b.x);
     line.setAttribute("y2", b.y);
     line.setAttribute("stroke", colorFor(t));
-    line.setAttribute("stroke-width", String(edgeStrokeWidth(t)));
+    line.setAttribute("stroke-width", String(sz(edgeStrokeWidth(t))));
     line.setAttribute(
       "class",
       `edge ${routeEdgeIds.has(edge.id) ? "route" : (state.plannedRoute ? "dim" : "")} ${state.selectedKind === "edge" && edge.id === state.selected ? "selected" : ""} ${state.searchMatches && state.searchMatches.edges.has(edge.id) ? "match" : ""} ${state.searchMatches && !state.searchMatches.edges.has(edge.id) ? "searchDim" : ""}`,
@@ -873,6 +902,7 @@ function drawNetwork() {
       selectGraphItem("edge", edge.id, { updateSearch: true });
     });
     edgeLayer.appendChild(line);
+    drawnEdges++;
   });
 
   const selected = selectedEdge();
@@ -880,6 +910,7 @@ function drawNetwork() {
   nodes.forEach((node) => {
     const p = state.positions.get(node.id);
     if (!p) return;
+    if (!nodeShown(node.id)) return;
     const t = normalize(nodeValue(node), nodeMin, nodeMax);
     const radius = nodeRadius(node, nodeSizeMin, nodeSizeMax);
     const originalRadius = rawNodeRadius(node, nodes);
@@ -892,14 +923,15 @@ function drawNetwork() {
       const pulse = document.createElementNS("http://www.w3.org/2000/svg", "circle");
       pulse.setAttribute("cx", p.x);
       pulse.setAttribute("cy", p.y);
-      pulse.setAttribute("r", Math.max(radius + 1, originalRadius));
+      pulse.setAttribute("r", sz(Math.max(radius + 1, originalRadius)));
       pulse.setAttribute("class", "nodePulse");
       pulseLayer.appendChild(pulse);
     }
+    const screenR = activeNode || routeEndpoint ? radius + 3 : radius;
     const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
     circle.setAttribute("cx", p.x);
     circle.setAttribute("cy", p.y);
-    circle.setAttribute("r", activeNode || routeEndpoint ? radius + 3 : radius);
+    circle.setAttribute("r", sz(screenR));
     circle.setAttribute("fill", colorFor(t));
     circle.setAttribute("class", `node ${activeNode ? "active" : ""} ${routeNode ? "route" : ""} ${routeEndpoint ? "routeEndpoint" : ""} ${state.plannedRoute && !routeNode ? "dim" : ""} ${state.searchMatches && state.searchMatches.nodes.has(node.id) ? "match" : ""} ${state.searchMatches && !state.searchMatches.nodes.has(node.id) ? "searchDim" : ""}`);
     circle.addEventListener("mouseenter", (event) => showTooltip(event, nodeTooltip(node)));
@@ -907,8 +939,11 @@ function drawNetwork() {
     circle.addEventListener("mouseleave", hideTooltip);
     circle.addEventListener("pointerdown", (event) => beginNodeDrag(event, node.id));
     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    label.setAttribute("x", p.x + radius + 5);
-    label.setAttribute("y", p.y + 4);
+    label.setAttribute("x", p.x + sz(screenR + 5));
+    label.setAttribute("y", p.y + sz(4));
+    // Keep labels a steady on-screen size too (font-size scales with the group otherwise).
+    label.style.fontSize = `${sz(11)}px`;
+    label.style.strokeWidth = `${sz(3.5)}px`;
     label.setAttribute("class", `nodeLabel${state.plannedRoute && !routeNode ? " dim" : ""}${state.searchMatches && !state.searchMatches.nodes.has(node.id) ? " searchDim" : ""}${state.searchMatches && state.searchMatches.nodes.has(node.id) ? " match" : ""}`);
     label.textContent = node.id;
     const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
@@ -916,7 +951,14 @@ function drawNetwork() {
     circle.appendChild(title);
     group.append(circle, label);
     nodeLayer.appendChild(group);
+    drawnNodes++;
   });
+
+  // Reflect the actual on-screen counts (post-filter, post-culling) in the badge.
+  if (els.summary && state.data.summary) {
+    const s = state.data.summary;
+    els.summary.textContent = `${drawnNodes}/${s.nodeCount} nodes, ${drawnEdges}/${s.inputEdgeCount} edges shown`;
+  }
 }
 
 function svgPointFromEvent(event) {
@@ -2288,6 +2330,14 @@ function syncFilterRows() {
 syncFilterRows();
 document.getElementById('edgeFilterSegments').addEventListener('click', syncFilterRows);
 document.getElementById('nodeFilterSegments').addEventListener('click', syncFilterRows);
+// Show the px min/max inputs only in Absolute mode, the ratio slider only in Relative.
+function syncSizeModeControls() {
+  document.querySelectorAll('[data-size-mode-only]').forEach((el) => {
+    el.hidden = el.getAttribute('data-size-mode-only') !== state.nodeSizeMode;
+  });
+}
+syncSizeModeControls();
+document.getElementById('nodeSizeModeSegments').addEventListener('click', syncSizeModeControls);
 setupResizablePanels();
 setupNetworkZoom();
 
@@ -2424,11 +2474,55 @@ els.exportFigure.addEventListener("click", exportFigure);
   els.nodeThreshold,
   els.nodeMinRadius,
   els.nodeMaxRadius,
-  els.nodeRadiusFold,
+  els.nodeSizeRatio,
 ].forEach((input) => input.addEventListener("input", () => {
+  if (input === els.nodeSizeRatio && els.nodeSizeRatioOut) {
+    els.nodeSizeRatioOut.textContent = `${Math.round(Number(els.nodeSizeRatio.value) || 1)}×`;
+  }
   state.layoutSignature = "";
   render();
 }));
+// Off-screen culling is a pure render change — redraw, no relayout needed.
+if (els.cullOffscreen) els.cullOffscreen.addEventListener("change", () => drawNetwork());
+
+// Left size panel ("dock"): move the edge-size and node-size controllers out of
+// the gear popover and stack them with their legends on the left, freeing the
+// canvas. Relocating after init keeps each element's id and bound listeners.
+(function setupSizeDock() {
+  const dock = document.getElementById("mapDock");
+  if (!dock) return;
+  const moveGroup = (anchorId, slotId) => {
+    const anchor = document.getElementById(anchorId);
+    const slot = document.getElementById(slotId);
+    if (anchor && slot) slot.appendChild(anchor.closest(".filterGroup") || anchor);
+  };
+  const moveEl = (id, slotId) => {
+    const el = document.getElementById(id);
+    const slot = document.getElementById(slotId);
+    if (el && slot) slot.appendChild(el);
+  };
+  moveGroup("metricSegments", "dockEdgeControls");    // Edge score controller
+  moveGroup("nodeScaleSegments", "dockNodeControls"); // Node radius controller
+  moveEl("edgeLegend", "dockEdgeLegend");
+  moveEl("sizeLegend", "dockNodeLegend");
+  const toggle = document.getElementById("mapDockToggle");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      const collapsed = dock.classList.toggle("collapsed");
+      toggle.textContent = collapsed ? "›" : "‹";
+      toggle.setAttribute("aria-label", collapsed ? "Expand size panel" : "Collapse size panel");
+    });
+  }
+})();
+
+// The gear "Side panel" switch fully shows/hides the left dock (default on).
+function applyLegendVisibility() {
+  const show = !els.showLegends || els.showLegends.checked;
+  const dock = document.getElementById("mapDock");
+  if (dock) dock.classList.toggle("dockHidden", !show);
+}
+if (els.showLegends) els.showLegends.addEventListener("change", applyLegendVisibility);
+applyLegendVisibility();
 els.includeNovel.addEventListener("change", analyze);
 els.fileInput.addEventListener("change", async () => {
   const file = els.fileInput.files && els.fileInput.files[0];

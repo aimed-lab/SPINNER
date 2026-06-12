@@ -1,5 +1,68 @@
 # Changelog
 
+## 1.139 — 2026-06-11
+
+Fix: `http://localhost:<port>` served a blank page.
+
+- The server bound IPv4 `127.0.0.1` only, but `localhost` often resolves to
+  IPv6 `::1` first (notably on macOS), so a `localhost` tab got
+  connection-refused and rendered nothing — only `127.0.0.1` worked.
+- The server now binds **both** loopback families (`127.0.0.1` and `::1`) by
+  default, so `localhost` works regardless of resolution. It stays
+  **loopback-only** (no LAN exposure) and falls back to IPv4 alone if IPv6 is
+  unavailable. Non-loopback `--host` values bind once, unchanged.
+
+## 1.138 — 2026-06-11
+
+Left **size dock** — legends and their controllers, off the canvas.
+
+- The node-size and edge-size **legends plus their controllers** now live in a
+  collapsible left panel docked beside the canvas (not floating over it), so the
+  network gets the full remaining width.
+  - **Edge size** card: edge-score controller (Raw / WIPER1 / WIPER2, UFC / W,
+    Linear / Log₂) + the edge-width legend.
+  - **Node size** card: node-radius controller (Linear / Log₂, Relative /
+    Absolute, min, ratio slider) + the node-size legend.
+- These controllers were **moved out of the gear popover** (single home). The
+  gear keeps Layout, Edges shown, Nodes shown, Declutter, and the Side-panel
+  toggle.
+- A **‹ / ›** handle collapses the dock to a thin rail; the gear's **Side panel**
+  switch hides it entirely for maximum canvas.
+
+## 1.137 — 2026-06-11
+
+Follow-ups to the explorer readability features.
+
+- **Header count badge now reflects the current view.** `N/total nodes,
+  M/total edges shown` is recomputed from what is actually drawn after
+  filtering **and** off-screen culling, and updates on every pan/zoom (not just
+  on filter changes). Zooming in now shows e.g. `15/34 nodes, 22/78 edges`.
+- **Legends are user-toggleable.** New **Legends** switch in Network Display
+  shows/hides the node-size and edge-width legends on the canvas (default on).
+- The node-size control (the **ratio** slider under *Node radius*) lives in the
+  Network Display popover (gear icon) — unchanged, just clarified relative to
+  the on-canvas legends.
+
+## 1.136 — 2026-06-11
+
+Two explorer readability features (Network Display settings).
+
+### Node size ratio + zoom-steady sizing
+- New **ratio** slider (1–100) under *Node radius* sets the largest-to-smallest
+  display ratio directly: the smallest node holds the `min` radius and the
+  largest is `min × ratio`. (Replaces the old `×fold` field; relative mode.)
+- Node glyph sizes now stay **visually steady as you zoom** — radii, edge
+  stroke widths, and labels are counter-scaled by `1/zoom`, so zooming changes
+  only spacing, not marker/label sizes. At fit (zoom = 1) rendering is
+  unchanged. The `min`/`max` px inputs apply in Absolute mode; the ratio slider
+  in Relative mode (controls auto-show per mode).
+
+### Off-screen culling (declutter)
+- New **Declutter** toggle (on by default): when zoomed in, any node whose
+  **center** falls outside the viewport is hidden, along with every edge that
+  touches it — cutting edge clutter. At fit / zoomed-out the viewport covers the
+  whole graph, so nothing is culled. Recomputed on every pan/zoom.
+
 ## 1.135 — 2026-06-09
 
 Assistant copilot: offline fallback so queries still work when the shared

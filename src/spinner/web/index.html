@@ -199,6 +199,22 @@
             </div>
 
             <div class="canvasWrap">
+              <div id="mapDock" class="mapDock">
+                <button id="mapDockToggle" type="button" class="mapDockToggle" aria-label="Collapse size panel" title="Collapse panel">‹</button>
+                <div class="mapDockBody">
+                  <section class="dockCard">
+                    <h3 class="dockCardTitle">Edge size</h3>
+                    <div id="dockEdgeControls" class="dockControls"></div>
+                    <div id="dockEdgeLegend" class="dockLegendSlot"></div>
+                  </section>
+                  <section class="dockCard">
+                    <h3 class="dockCardTitle">Node size</h3>
+                    <div id="dockNodeControls" class="dockControls"></div>
+                    <div id="dockNodeLegend" class="dockLegendSlot"></div>
+                  </section>
+                </div>
+              </div>
+              <div class="canvasArea">
               <div class="mapSearchBox">
                 <div class="mapSearchRow">
                   <label class="explorerSearchLabel">
@@ -357,10 +373,28 @@
                       </div>
                       <div class="numberRow">
                         <label><span>min</span><input id="nodeMinRadiusInput" type="number" min="1" max="40" step="1" value="7" aria-label="Minimum node radius" /></label>
-                        <label><span>max</span><input id="nodeMaxRadiusInput" type="number" min="2" max="80" step="1" value="28" aria-label="Maximum node radius" /></label>
-                        <label><span>×fold</span><input id="nodeRadiusFoldInput" type="number" min="1" max="20" step="0.5" value="4" aria-label="Relative node radius fold" /></label>
+                        <label data-size-mode-only="absolute"><span>max</span><input id="nodeMaxRadiusInput" type="number" min="2" max="80" step="1" value="28" aria-label="Maximum node radius" /></label>
                       </div>
+                      <label class="rangeRow" data-size-mode-only="relative">
+                        <span>ratio</span>
+                        <input id="nodeSizeRatioInput" type="range" min="1" max="100" step="1" value="4" aria-label="Largest-to-smallest node size ratio" />
+                        <output id="nodeSizeRatioOut">4×</output>
+                      </label>
                     </div>
+                  </div>
+                  <div class="filterGroup">
+                    <span>Declutter</span>
+                    <label class="checkRow">
+                      <input id="cullOffscreenInput" type="checkbox" checked />
+                      <span>When zoomed in, hide nodes whose center is off-screen (and their edges)</span>
+                    </label>
+                  </div>
+                  <div class="filterGroup">
+                    <span>Side panel</span>
+                    <label class="checkRow">
+                      <input id="showLegendsInput" type="checkbox" checked />
+                      <span>Show the left size panel (node &amp; edge legends + size controls)</span>
+                    </label>
                   </div>
                 </div>
               </div>
@@ -379,6 +413,7 @@
               <div id="edgeLegend" class="edgeLegend"></div>
               <div id="sizeLegend" class="sizeLegend"></div>
               <div id="graphTooltip" class="graphTooltip" hidden></div>
+              </div><!-- /.canvasArea -->
             </div>
           </section>
         </section>
