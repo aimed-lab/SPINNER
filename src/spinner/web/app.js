@@ -2538,6 +2538,8 @@ try {
 }
 setSidePanel("input");
 setSidebarCollapsed(true);
+// Default to the map-first view: results table collapsed, canvas full-height.
+setResultsView("collapsed");
 window.addEventListener("resize", () => {
   if (isNarrowViewport() && !state.sidebarCollapsed) {
     setSidebarCollapsed(true);

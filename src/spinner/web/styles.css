@@ -1823,7 +1823,10 @@ body.sidebarCollapsed .navItem.navAction::before { left: 4px; right: 4px; }
   100% { box-shadow: 0 0 0 0 rgba(79,70,229,0); }
 }
 
-.workspace.topbarless { padding-top: 12px; }
+/* No topbar is rendered in this layout, so don't reserve its height — fill the
+   full viewport. Otherwise the sidebar and canvas stop ~56px short of the
+   bottom, leaving a dead band above the results bar. */
+.workspace.topbarless { height: 100vh; padding-top: 12px; }
 .sidebarBrand { display: none; }
 .sidebarToggle.homeBtn { display: flex; align-items: center; gap: 10px; color: var(--accent); }
 .sidebarToggle.homeBtn .sidebarToggleIcon { display: inline-flex; }
@@ -2178,7 +2181,9 @@ body.sidebarCollapsed .navItem.navAction::before { left: 4px; right: 4px; }
    is ALWAYS visible and clickable regardless of workbench height / overflow.
    The workbench drops its results row and reserves bottom padding so the canvas
    isn't hidden behind the bar. */
-.workbench.results-collapsed { grid-template-rows: minmax(220px, 1fr) 0 0; padding-bottom: 50px; }
+/* Reserve exactly the fixed bar's height minus the workspace's bottom padding
+   (46px bar − 10px pad = 36px) so the canvas meets the collapsed bar flush. */
+.workbench.results-collapsed { grid-template-rows: minmax(220px, 1fr) 0 0; padding-bottom: 36px; }
 .workbench.results-collapsed > #resultsResizeHandle { display: none; }
 .resultsPanel.collapsed {
   position: fixed; left: 0; right: 0; bottom: 0; height: 46px;
