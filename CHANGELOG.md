@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.138 — 2026-06-11
+
+Left **size dock** — legends and their controllers, off the canvas.
+
+- The node-size and edge-size **legends plus their controllers** now live in a
+  collapsible left panel docked beside the canvas (not floating over it), so the
+  network gets the full remaining width.
+  - **Edge size** card: edge-score controller (Raw / WIPER1 / WIPER2, UFC / W,
+    Linear / Log₂) + the edge-width legend.
+  - **Node size** card: node-radius controller (Linear / Log₂, Relative /
+    Absolute, min, ratio slider) + the node-size legend.
+- These controllers were **moved out of the gear popover** (single home). The
+  gear keeps Layout, Edges shown, Nodes shown, Declutter, and the Side-panel
+  toggle.
+- A **‹ / ›** handle collapses the dock to a thin rail; the gear's **Side panel**
+  switch hides it entirely for maximum canvas.
+
 ## 1.137 — 2026-06-11
 
 Follow-ups to the explorer readability features.

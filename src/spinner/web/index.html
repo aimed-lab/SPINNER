@@ -199,6 +199,22 @@
             </div>
 
             <div class="canvasWrap">
+              <div id="mapDock" class="mapDock">
+                <button id="mapDockToggle" type="button" class="mapDockToggle" aria-label="Collapse size panel" title="Collapse panel">‹</button>
+                <div class="mapDockBody">
+                  <section class="dockCard">
+                    <h3 class="dockCardTitle">Edge size</h3>
+                    <div id="dockEdgeControls" class="dockControls"></div>
+                    <div id="dockEdgeLegend" class="dockLegendSlot"></div>
+                  </section>
+                  <section class="dockCard">
+                    <h3 class="dockCardTitle">Node size</h3>
+                    <div id="dockNodeControls" class="dockControls"></div>
+                    <div id="dockNodeLegend" class="dockLegendSlot"></div>
+                  </section>
+                </div>
+              </div>
+              <div class="canvasArea">
               <div class="mapSearchBox">
                 <div class="mapSearchRow">
                   <label class="explorerSearchLabel">
@@ -374,10 +390,10 @@
                     </label>
                   </div>
                   <div class="filterGroup">
-                    <span>Legends</span>
+                    <span>Side panel</span>
                     <label class="checkRow">
                       <input id="showLegendsInput" type="checkbox" checked />
-                      <span>Show the node-size and edge-width legends on the canvas</span>
+                      <span>Show the left size panel (node &amp; edge legends + size controls)</span>
                     </label>
                   </div>
                 </div>
@@ -397,6 +413,7 @@
               <div id="edgeLegend" class="edgeLegend"></div>
               <div id="sizeLegend" class="sizeLegend"></div>
               <div id="graphTooltip" class="graphTooltip" hidden></div>
+              </div><!-- /.canvasArea -->
             </div>
           </section>
         </section>
