@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.140 — 2026-06-11
+
+Fix: ~30s blank canvas on the first analysis after a cold start.
+
+- The WIPER/WINNER engines are numba-JIT-compiled; the first `/api/analyze`
+  after a server start paid a one-time ~30-40s compile, during which the
+  explorer canvas sat blank.
+- The server now **pre-compiles those kernels in a background daemon thread at
+  boot** (a tiny throwaway analysis), so the first real page load is fast
+  (~2s). The server still accepts connections immediately while warming —
+  serving is never blocked — and the warm-up is best-effort (any failure is
+  swallowed). Network-only, no behavior change.
+
 ## 1.139 — 2026-06-11
 
 Fix: `http://localhost:<port>` served a blank page.

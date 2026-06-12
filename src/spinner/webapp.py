@@ -367,6 +367,21 @@ class _HTTPServerV6(ThreadingHTTPServer):
     address_family = socket.AF_INET6
 
 
+def _warm_up_engines() -> None:
+    """Pre-compile the numba-jitted WIPER/WINNER kernels in the background.
+
+    The first ``/api/analyze`` after a cold start otherwise pays a ~30-40s
+    one-time JIT compile, during which the explorer canvas sits blank. Running a
+    tiny throwaway analysis on a daemon thread at boot compiles those kernels
+    while the server is already accepting connections, so the first real page
+    load is fast. Network-only and best-effort — any failure is swallowed.
+    """
+    try:
+        analyze_edges_text("A\tB\t0.9\nB\tC\t0.8\nA\tC\t0.4\nC\tD\t0.7", iterations=40)
+    except Exception:
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     _raise_recursion_headroom()
     parser = argparse.ArgumentParser(description="Run the local SPINNER web explorer")
@@ -398,6 +413,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Serving SPINNER web explorer at http://{shown}:{args.port}")
     if args.host in loopback and len(servers) > 1:
         print(f"  (also http://localhost:{args.port})")
+
+    # Compile the scoring kernels in the background so the first request is fast.
+    print("Warming scoring engines in background…")
+    threading.Thread(target=_warm_up_engines, daemon=True, name="spinner-warmup").start()
 
     # Serve every bound socket; extras on daemon threads, the first inline.
     for extra in servers[1:]:
