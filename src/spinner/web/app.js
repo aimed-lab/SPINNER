@@ -2484,11 +2484,42 @@ els.exportFigure.addEventListener("click", exportFigure);
 }));
 // Off-screen culling is a pure render change — redraw, no relayout needed.
 if (els.cullOffscreen) els.cullOffscreen.addEventListener("change", () => drawNetwork());
-// Legends are user-toggleable; default on.
+
+// Left size panel ("dock"): move the edge-size and node-size controllers out of
+// the gear popover and stack them with their legends on the left, freeing the
+// canvas. Relocating after init keeps each element's id and bound listeners.
+(function setupSizeDock() {
+  const dock = document.getElementById("mapDock");
+  if (!dock) return;
+  const moveGroup = (anchorId, slotId) => {
+    const anchor = document.getElementById(anchorId);
+    const slot = document.getElementById(slotId);
+    if (anchor && slot) slot.appendChild(anchor.closest(".filterGroup") || anchor);
+  };
+  const moveEl = (id, slotId) => {
+    const el = document.getElementById(id);
+    const slot = document.getElementById(slotId);
+    if (el && slot) slot.appendChild(el);
+  };
+  moveGroup("metricSegments", "dockEdgeControls");    // Edge score controller
+  moveGroup("nodeScaleSegments", "dockNodeControls"); // Node radius controller
+  moveEl("edgeLegend", "dockEdgeLegend");
+  moveEl("sizeLegend", "dockNodeLegend");
+  const toggle = document.getElementById("mapDockToggle");
+  if (toggle) {
+    toggle.addEventListener("click", () => {
+      const collapsed = dock.classList.toggle("collapsed");
+      toggle.textContent = collapsed ? "›" : "‹";
+      toggle.setAttribute("aria-label", collapsed ? "Expand size panel" : "Collapse size panel");
+    });
+  }
+})();
+
+// The gear "Side panel" switch fully shows/hides the left dock (default on).
 function applyLegendVisibility() {
   const show = !els.showLegends || els.showLegends.checked;
-  if (els.sizeLegend) els.sizeLegend.hidden = !show;
-  if (els.edgeLegend) els.edgeLegend.hidden = !show;
+  const dock = document.getElementById("mapDock");
+  if (dock) dock.classList.toggle("dockHidden", !show);
 }
 if (els.showLegends) els.showLegends.addEventListener("change", applyLegendVisibility);
 applyLegendVisibility();
