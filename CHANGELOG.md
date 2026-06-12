@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.137 — 2026-06-11
+
+Follow-ups to the explorer readability features.
+
+- **Header count badge now reflects the current view.** `N/total nodes,
+  M/total edges shown` is recomputed from what is actually drawn after
+  filtering **and** off-screen culling, and updates on every pan/zoom (not just
+  on filter changes). Zooming in now shows e.g. `15/34 nodes, 22/78 edges`.
+- **Legends are user-toggleable.** New **Legends** switch in Network Display
+  shows/hides the node-size and edge-width legends on the canvas (default on).
+- The node-size control (the **ratio** slider under *Node radius*) lives in the
+  Network Display popover (gear icon) — unchanged, just clarified relative to
+  the on-canvas legends.
+
 ## 1.136 — 2026-06-11
 
 Two explorer readability features (Network Display settings).

@@ -64,6 +64,7 @@ const els = {
   tooltip: document.getElementById("graphTooltip"),
   sizeLegend: document.getElementById("sizeLegend"),
   edgeLegend: document.getElementById("edgeLegend"),
+  showLegends: document.getElementById("showLegendsInput"),
   explorerSearch: document.getElementById("explorerSearchInput"),
   explorerSearchResults: document.getElementById("explorerSearchResults"),
   explorerDetails: document.getElementById("explorerDetails"),
@@ -872,6 +873,11 @@ function drawNetwork() {
   }
   const nodeShown = (id) => !cull || visible.has(id);
 
+  // Count what is actually drawn (after filter + culling) so the header badge
+  // reflects the current view — updated on every pan/zoom, not just on filter.
+  let drawnNodes = 0;
+  let drawnEdges = 0;
+
   edges.forEach((edge) => {
     const a = state.positions.get(edge.source);
     const b = state.positions.get(edge.target);
@@ -896,6 +902,7 @@ function drawNetwork() {
       selectGraphItem("edge", edge.id, { updateSearch: true });
     });
     edgeLayer.appendChild(line);
+    drawnEdges++;
   });
 
   const selected = selectedEdge();
@@ -944,7 +951,14 @@ function drawNetwork() {
     circle.appendChild(title);
     group.append(circle, label);
     nodeLayer.appendChild(group);
+    drawnNodes++;
   });
+
+  // Reflect the actual on-screen counts (post-filter, post-culling) in the badge.
+  if (els.summary && state.data.summary) {
+    const s = state.data.summary;
+    els.summary.textContent = `${drawnNodes}/${s.nodeCount} nodes, ${drawnEdges}/${s.inputEdgeCount} edges shown`;
+  }
 }
 
 function svgPointFromEvent(event) {
@@ -2470,6 +2484,14 @@ els.exportFigure.addEventListener("click", exportFigure);
 }));
 // Off-screen culling is a pure render change — redraw, no relayout needed.
 if (els.cullOffscreen) els.cullOffscreen.addEventListener("change", () => drawNetwork());
+// Legends are user-toggleable; default on.
+function applyLegendVisibility() {
+  const show = !els.showLegends || els.showLegends.checked;
+  if (els.sizeLegend) els.sizeLegend.hidden = !show;
+  if (els.edgeLegend) els.edgeLegend.hidden = !show;
+}
+if (els.showLegends) els.showLegends.addEventListener("change", applyLegendVisibility);
+applyLegendVisibility();
 els.includeNovel.addEventListener("change", analyze);
 els.fileInput.addEventListener("change", async () => {
   const file = els.fileInput.files && els.fileInput.files[0];
