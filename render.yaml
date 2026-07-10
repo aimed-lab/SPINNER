@@ -13,3 +13,18 @@ services:
         value: 3.11.9
       - key: PIP_NO_CACHE_DIR
         value: "1"
+      # Keep RSS under the 512MB free-tier cap: cap all math thread pools to 1
+      # (OpenBLAS/OMP/MKL allocate large per-thread buffers) and limit glibc
+      # malloc arenas so numba/pandas don't balloon resident memory.
+      - key: OPENBLAS_NUM_THREADS
+        value: "1"
+      - key: OMP_NUM_THREADS
+        value: "1"
+      - key: MKL_NUM_THREADS
+        value: "1"
+      - key: NUMBA_NUM_THREADS
+        value: "1"
+      - key: NUMEXPR_NUM_THREADS
+        value: "1"
+      - key: MALLOC_ARENA_MAX
+        value: "2"
