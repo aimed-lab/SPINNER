@@ -83,9 +83,10 @@
             <span>Network file</span>
             <input id="fileInput" type="file" accept=".tsv,.txt,.csv" />
           </label>
-          <details class="inlineDetails">
+          <details class="inlineDetails" open>
             <summary>Paste edge list (tsv: node1 ⇥ node2 ⇥ weight)</summary>
             <textarea id="edgeText" spellcheck="false"></textarea>
+            <button id="analyzeBtn" type="button" class="railAction primary" style="margin-top:0.4rem;width:100%">Run analysis</button>
           </details>
 
           <div class="sectionTitle"><span class="sectionRule"></span><span class="blockLabel">Session &amp; parameters</span></div>

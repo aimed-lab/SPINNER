@@ -2769,3 +2769,40 @@ function closeAssistant() {
     });
   }
 })();
+
+// Explicit "Run analysis" button beside the paste-edge box.
+const _analyzeBtn = document.getElementById("analyzeBtn");
+if (_analyzeBtn) _analyzeBtn.addEventListener("click", analyze);
+
+// Receive a network handed off from GeneTerrain: it stashes the edge list +
+// params in localStorage under "spinnerPreload", then opens this page. We load
+// them into the Build panel and auto-run. (Complements openInGeneterrain, which
+// pushes the opposite direction: SPINNER scores -> GeneTerrain.)
+(function loadGeneterrainPreload() {
+  try {
+    const raw = localStorage.getItem('spinnerPreload');
+    if (!raw) return;
+    const cfg = JSON.parse(raw);
+    localStorage.removeItem('spinnerPreload');
+
+    if (cfg.edgeText && els.edgeText) {
+      els.edgeText.value = cfg.edgeText;
+      const details = els.edgeText.closest('details');
+      if (details) details.open = true;
+    }
+    if (cfg.iterations != null && els.iterations) els.iterations.value = cfg.iterations;
+    if (cfg.device && els.device) els.device.value = cfg.device;
+    if (cfg.includeNovel != null && els.includeNovel) els.includeNovel.checked = !!cfg.includeNovel;
+
+    const banner = document.createElement('div');
+    banner.textContent = '↺ Loaded from GeneTerrain SPINNER — running analysis…';
+    banner.style.cssText = 'position:fixed;top:8px;left:50%;transform:translateX(-50%);background:#2563eb;color:#fff;padding:6px 18px;border-radius:20px;font-size:12px;font-family:monospace;z-index:9999;pointer-events:none;opacity:1;transition:opacity 1.5s';
+    document.body.appendChild(banner);
+    setTimeout(() => { banner.style.opacity = '0'; setTimeout(() => banner.remove(), 1600); }, 2000);
+
+    setTimeout(() => {
+      const btn = document.getElementById('analyzeBtn');
+      if (btn) btn.click();
+    }, 300);
+  } catch (_e) {}
+})();
