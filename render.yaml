@@ -4,7 +4,7 @@ services:
     runtime: python
     plan: free
     region: oregon
-    branch: main
+    branch: dev
     buildCommand: pip install -e .
     startCommand: spinner-web --host 0.0.0.0 --port $PORT
     healthCheckPath: /
