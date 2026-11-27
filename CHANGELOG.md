@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.143 - 2026-11-27
+
+Developer API keys can now carry an enforced expiry date.
+
+- A `SPINNER_API_KEYS` entry may be `key`, `key:label`, or
+  `key:label:YYYY-MM-DD`. Past the date, the key is rejected with HTTP 401
+  (`X-API-Key-Status: expired:<date>`) instead of granting unlimited access;
+  the holder can drop the header to use the open rate-limited tier, or get a
+  renewed key. A malformed date is ignored (the key keeps working) so a typo
+  can never lock everyone out. Keys with no date never expire (e.g. the owner
+  master key).
 ## 1.142 - 2026-11-27
 
 Public hosting: open + free, with rate-limited agentic access.
