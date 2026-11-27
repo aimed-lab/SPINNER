@@ -1,3 +1,14 @@
+<!-- Hugging Face Spaces metadata (Docker SDK). Ignored by GitHub/Render. -->
+---
+title: SPINNER
+emoji: 🌀
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # network SPINNER
 
 **Seeded Protein Interaction Network Neighborhood Expansion and Ranking**

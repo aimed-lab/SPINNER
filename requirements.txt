@@ -1,1 +1,4 @@
-.
+# Runtime dependencies for the Vercel Python function (api/analyze.py).
+# WIPER/WINNER pull numpy, pandas and scipy transitively; numba is NOT required.
+wiper-net @ git+https://github.com/aimed-lab/WIPER.git#subdirectory=python
+winner-net @ git+https://github.com/aimed-lab/WINNER.git#subdirectory=python
