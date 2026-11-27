@@ -5,20 +5,33 @@ RATE_LIMIT requests per hour per client IP; exceeding it returns HTTP 429 with
 a Retry-After header. Requests that carry a valid developer API key (lab members
 and smartdrugdiscovery.org partners) bypass the limit entirely.
 
+Developer keys live in the SPINNER_API_KEYS environment variable, comma
+separated. Each entry is one of:
+
+    key
+    key:label
+    key:label:YYYY-MM-DD      <- optional expiry date (enforced)
+
+The label is for your own records (e.g. who holds the key). If a key has an
+expiry date and today is past it, the key is rejected with HTTP 401 ("key
+expired") — the holder falls back to the open, rate-limited tier by dropping the
+header, or requests a renewed key. A malformed date is ignored (the key keeps
+working) so a typo can never lock everyone out.
+
 Configuration (Vercel environment variables, all optional):
-  SPINNER_API_KEYS        Comma-separated developer keys that bypass the limit.
-                          A key may be written as "key" or "key:label".
-  SPINNER_RATE_LIMIT      Requests/hour for anonymous callers (default 100).
-  UPSTASH_REDIS_REST_URL  Upstash Redis REST URL — enables rate limiting.
+  SPINNER_API_KEYS          Developer keys (see format above).
+  SPINNER_RATE_LIMIT        Requests/hour for anonymous callers (default 100).
+  UPSTASH_REDIS_REST_URL    Upstash Redis REST URL — enables rate limiting.
   UPSTASH_REDIS_REST_TOKEN  Upstash Redis REST token.
 
-If the Upstash variables are not set, rate limiting is simply disabled (the
-service stays open) — so the app works before the store is provisioned, and the
-counter store never becomes a hard dependency. Any store error fails OPEN.
+If the Upstash variables are not set, rate limiting is disabled (the service
+stays open), so the app works before the store is provisioned. Any store error
+fails OPEN.
 """
 
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
+import datetime
 import hmac
 import json
 import os
@@ -41,15 +54,26 @@ def _rate_limit() -> int:
         return 100
 
 
-def _allowed_keys() -> set:
+def _key_registry() -> dict:
+    """Map developer api_key -> expiry (datetime.date) or None (never expires)."""
     raw = os.environ.get("SPINNER_API_KEYS", "")
-    keys = set()
+    reg = {}
     for part in raw.split(","):
         part = part.strip()
         if not part:
             continue
-        keys.add(part.split(":", 1)[0].strip())  # allow "key:label"
-    return keys
+        fields = part.split(":")
+        key = fields[0].strip()
+        if not key:
+            continue
+        expiry = None
+        if len(fields) >= 3 and fields[2].strip():
+            try:
+                expiry = datetime.date.fromisoformat(fields[2].strip())
+            except ValueError:
+                expiry = None  # malformed date -> ignore (never lock out)
+        reg[key] = expiry
+    return reg
 
 
 def _request_key(headers) -> str:
@@ -61,14 +85,27 @@ def _request_key(headers) -> str:
     return key
 
 
-def _has_valid_key(headers) -> bool:
+def _key_status(headers):
+    """Classify the request's developer key.
+
+    Returns (status, expiry) where status is:
+      "valid"   present, recognised, not expired -> bypass the rate limit
+      "expired" present, recognised, past its expiry date -> reject (401)
+      "absent"  no key, or an unrecognised key -> anonymous, rate limited
+    """
     key = _request_key(headers)
     if not key:
-        return False
-    for allowed in _allowed_keys():
-        if hmac.compare_digest(key, allowed):
-            return True
-    return False
+        return "absent", None
+    matched = None
+    for known, expiry in _key_registry().items():
+        if hmac.compare_digest(key, known):
+            matched = expiry
+            break
+    else:
+        return "absent", None  # unknown key -> treat as anonymous
+    if matched is not None and datetime.date.today() > matched:
+        return "expired", matched
+    return "valid", matched
 
 
 def _client_ip(headers) -> str:
@@ -121,7 +158,7 @@ def _check_rate(ip: str, limit: int):
 
 
 class handler(BaseHTTPRequestHandler):
-    server_version = "SpinnerVercel/0.2"
+    server_version = "SpinnerVercel/0.3"
 
     def log_message(self, format, *args):  # noqa: A002
         return
@@ -149,11 +186,24 @@ class handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         limit = _rate_limit()
-        keyed = _has_valid_key(self.headers)
+        status, expiry = _key_status(self.headers)
         headers = {}
-        if keyed:
+        if status == "valid":
             headers["X-RateLimit-Bypass"] = "api-key"
-        else:
+        elif status == "expired":
+            self._send_json(
+                HTTPStatus.UNAUTHORIZED,
+                {
+                    "error": (
+                        f"Developer API key expired on {expiry.isoformat()}. Request a "
+                        "renewed key (lab members / smartdrugdiscovery.org partners), or "
+                        "drop the key header to use the free rate-limited tier."
+                    )
+                },
+                {"X-API-Key-Status": f"expired:{expiry.isoformat()}"},
+            )
+            return
+        else:  # absent / unknown key -> anonymous, rate limited
             allowed, remaining, reset_s = _check_rate(_client_ip(self.headers), limit)
             headers = {
                 "X-RateLimit-Limit": limit,
