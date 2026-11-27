@@ -30,11 +30,16 @@ Generate one key per person/partner:
 ```bash
 python3 -c "import secrets; print('spnr_'+secrets.token_urlsafe(24))"
 ```
-Set them as a comma-separated list (optionally `key:who` for your own tracking —
-only the part before `:` is the key):
+Set them as a comma-separated list. Each entry is `key`, `key:label` (label is
+for your own records), or `key:label:YYYY-MM-DD` to give the key an **enforced
+expiry** — past that date it returns HTTP 401 (`X-API-Key-Status: expired`).
+Keys with no date never expire; use that for the owner master key.
 ```bash
 vercel env add SPINNER_API_KEYS production
-# paste e.g.:  spnr_AbC...:jake@uab,  spnr_XyZ...:partner-sdd
+# paste e.g.:
+#   spnr_AbC...:jake-uab,                     <- owner, never expires
+#   spnr_XyZ...:lab-member:2027-05-27,        <- expires in 6 months
+#   spnr_QwE...:partner-sdd:2027-05-27
 ```
 Optional: `vercel env add SPINNER_RATE_LIMIT production` to change the 100/hour
 default for anonymous callers.
