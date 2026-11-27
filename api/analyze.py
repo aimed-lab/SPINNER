@@ -131,8 +131,10 @@ _LUA = (
 
 def _check_rate(ip: str, limit: int):
     """Return (allowed, remaining, reset_seconds). Fails OPEN on any problem."""
-    url = os.environ.get("UPSTASH_REDIS_REST_URL", "").rstrip("/")
-    token = os.environ.get("UPSTASH_REDIS_REST_TOKEN", "")
+    # Vercel's Upstash/KV integration injects KV_REST_API_* (the same Upstash REST
+    # endpoint + token); accept either naming so it works out of the box.
+    url = (os.environ.get("UPSTASH_REDIS_REST_URL") or os.environ.get("KV_REST_API_URL") or "").rstrip("/")
+    token = os.environ.get("UPSTASH_REDIS_REST_TOKEN") or os.environ.get("KV_REST_API_TOKEN") or ""
     if not url or not token:
         return True, limit, 0  # rate limiting disabled
     now = int(time.time() * 1000)

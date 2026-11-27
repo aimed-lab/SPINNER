@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.144 - 2026-11-27
+
+Rate limiter also reads Vercel KV / Upstash integration env names.
+
+- Vercel's Upstash (KV) integration injects `KV_REST_API_URL` / `KV_REST_API_TOKEN`
+  (the same Upstash REST endpoint + token) rather than `UPSTASH_REDIS_REST_*`.
+  `_check_rate` now accepts either, so rate limiting turns on automatically when
+  the Upstash store is connected through Vercel. Still fails open if neither is set.
 ## 1.143 - 2026-11-27
 
 Developer API keys can now carry an enforced expiry date.
