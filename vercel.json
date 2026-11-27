@@ -3,7 +3,8 @@
   "outputDirectory": "src/spinner/web",
   "functions": {
     "api/analyze.py": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "memory": 1024
     }
   }
 }

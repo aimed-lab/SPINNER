@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.142 - 2026-11-27
+
+Public hosting: open + free, with rate-limited agentic access.
+
+- **Vercel deploy made real.** Added `requirements.txt` (wiper-net/winner-net,
+  pulling numpy/pandas/scipy; no numba) so the `api/analyze.py` function builds,
+  and set its memory/duration. Target: `spinner.aimed-lab.org`. See `DEPLOY.md`.
+- **Rate limiting on `POST /api/analyze`.** 100 requests/hour per client IP
+  (configurable via `SPINNER_RATE_LIMIT`); over the limit returns HTTP 429 with
+  `Retry-After`. Responses carry `X-RateLimit-Limit/Remaining/Reset`. Implemented
+  as a Redis sliding-window log (Upstash REST); a rejected request is not
+  counted, and any store error **fails open**. Disabled (open) until the Upstash
+  env vars are set, so it is never a hard dependency.
+- **Developer API keys bypass the limit.** `X-API-Key` or `Authorization: Bearer`
+  checked against a static allowlist in `SPINNER_API_KEYS` (supports `key:label`),
+  for lab members and smartdrugdiscovery.org partners.
+
 ## 1.141 — 2026-06-11
 
 Map-first default view + fill the canvas to the bottom.
